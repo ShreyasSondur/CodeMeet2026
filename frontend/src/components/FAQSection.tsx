@@ -87,7 +87,7 @@ export default function FAQSection() {
         <motion.div
           initial={{ opacity: 0, y: 15 }}
           whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: false, amount: 0.08, margin: "0px 0px -30px 0px" }}
+          viewport={{ once: true, amount: 0.05 }}
           transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
           className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-black/80 border border-[#ccff00]/60 text-[#ccff00] text-xs font-mono shadow-[0_0_20px_rgba(204,255,0,0.25)]"
         >
@@ -99,7 +99,7 @@ export default function FAQSection() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: false, amount: 0.08, margin: "0px 0px -30px 0px" }}
+          viewport={{ once: true, amount: 0.05 }}
           transition={{ duration: 0.6, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
           className="space-y-1"
         >
@@ -114,7 +114,7 @@ export default function FAQSection() {
         <motion.p
           initial={{ opacity: 0, y: 15 }}
           whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: false, amount: 0.08, margin: "0px 0px -30px 0px" }}
+          viewport={{ once: true, amount: 0.05 }}
           transition={{ duration: 0.5, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
           className="font-mono text-xs sm:text-sm text-zinc-400 max-w-md mx-auto"
         >
@@ -132,7 +132,7 @@ export default function FAQSection() {
               key={faq.id}
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: false, amount: 0.08, margin: "0px 0px -35px 0px" }}
+              viewport={{ once: true, amount: 0.05 }}
               transition={{
                 duration: 0.55,
                 delay: (idx % 3) * 0.06,

@@ -130,7 +130,7 @@ export default function RegistrationSection() {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: false, amount: 0.08, margin: "0px 0px -30px 0px" }}
+        viewport={{ once: true, amount: 0.05 }}
         transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
         className="relative z-10 w-full max-w-5xl mx-auto text-center space-y-3 pt-2 mb-10 select-none"
       >
@@ -194,7 +194,7 @@ export default function RegistrationSection() {
               key={card.id}
               initial={{ opacity: 0, y: 22 }}
               whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: false, amount: 0.08, margin: "0px 0px -40px 0px" }}
+              viewport={{ once: true, amount: 0.05 }}
               transition={{
                 duration: 0.65,
                 delay: (idx % 2) * 0.08,

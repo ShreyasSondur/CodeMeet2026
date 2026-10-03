@@ -185,6 +185,12 @@ export default function TimelineSection() {
   const handleToggleMode = (mode: "2D" | "3D") => {
     soundFX.playClick();
     setViewMode(mode);
+    if (typeof window !== "undefined") {
+      setTimeout(() => {
+        window.dispatchEvent(new Event("resize"));
+        window.dispatchEvent(new Event("scroll"));
+      }, 60);
+    }
   };
 
   const phase1 = milestones.filter((m) => m.phase === 1);

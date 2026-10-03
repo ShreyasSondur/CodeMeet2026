@@ -503,7 +503,7 @@ export default function ProblemStatementsSection() {
             key={problem.id}
             initial={{ opacity: 0, y: 22 }}
             whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: false, amount: 0.08, margin: "0px 0px -40px 0px" }}
+            viewport={{ once: true, amount: 0.05 }}
             transition={{
               duration: 0.65,
               delay: (idx % 2) * 0.08,
