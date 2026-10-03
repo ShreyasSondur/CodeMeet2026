@@ -29,7 +29,7 @@ from database import (
     get_event_pricing,
     update_event_pricing
 )
-from email_service import send_admin_otp_email
+from email_service import send_admin_otp_email, send_registration_confirmation_emails
 
 load_dotenv()
 
@@ -473,6 +473,19 @@ def verify_payment(data: VerifyPaymentRequest):
             amount_paid=effective_amount
         )
 
+        # Dispatch personalized confirmation emails to all participants (solo or every team member)
+        send_registration_confirmation_emails(
+            reg_id=reg_id,
+            event_id=event_id,
+            event_name=event_name,
+            team_name=data.team_name or ("Solo" if data.is_solo else ""),
+            college_name=data.college_name,
+            members=members_data,
+            is_solo=bool(data.is_solo),
+            amount_paid=effective_amount,
+            payment_id=data.razorpay_payment_id
+        )
+
     return {
         "success": True,
         "message": "Payment verified and authenticated successfully!",
@@ -518,6 +531,19 @@ def register_participant(data: RegistrationRequest):
         payment_status="PAID" if data.payment_id else "VERIFIED",
         payment_id=data.payment_id or "",
         amount_paid=data.amount_paid or "1"
+    )
+
+    # Dispatch personalized confirmation emails to all participants (solo or every team member)
+    send_registration_confirmation_emails(
+        reg_id=reg_id,
+        event_id=data.event_id,
+        event_name=data.event_name,
+        team_name=data.team_name or ("Solo" if data.is_solo else ""),
+        college_name=data.college_name,
+        members=members_data,
+        is_solo=bool(data.is_solo),
+        amount_paid=data.amount_paid or "1",
+        payment_id=data.payment_id or ""
     )
 
     return {
@@ -629,6 +655,19 @@ def admin_add_registration(data: RegistrationRequest, _: bool = Depends(verify_a
         payment_status="VERIFIED",
         payment_id=data.payment_id or "ADMIN_MANUAL",
         amount_paid=data.amount_paid or "1"
+    )
+
+    # Dispatch personalized confirmation emails to all participants
+    send_registration_confirmation_emails(
+        reg_id=reg_id,
+        event_id=data.event_id,
+        event_name=data.event_name,
+        team_name=data.team_name or ("Solo" if data.is_solo else ""),
+        college_name=data.college_name,
+        members=members_data,
+        is_solo=bool(data.is_solo),
+        amount_paid=data.amount_paid or "1",
+        payment_id=data.payment_id or "ADMIN_MANUAL"
     )
 
     return {

@@ -197,3 +197,483 @@ Webflow Student Community - Official CODEMEET 2026 Security System
         err = f"Failed to send email: {str(e)}"
         print(f"[ERROR] {err}")
         return False, err
+
+
+EVENT_META_MAP = {
+    "hackathon": {
+        "title": "24H National Hackathon",
+        "color": "#ccff00",
+        "date": "OCT 23-24 (Round 1 Online Screening) • NOV 01-02 (Round 2 Grand 24H Offline Finale)",
+        "venue": "Main Seminar Hall & Advanced Computing Labs, SUIET Mukka, Mangaluru",
+        "tag": "FLAGSHIP 24H ARENA"
+    },
+    "speed-typing": {
+        "title": "Speed Typing Showdown",
+        "color": "#f59e0b",
+        "date": "OCTOBER 31, 2026 • 10:30 AM IST",
+        "venue": "Computing Lab 03 (Ground Floor), SUIET Mukka, Mangaluru",
+        "tag": "SPEED & ACCURACY BLITZ"
+    },
+    "treasure-hunt": {
+        "title": "Treasure Hunt Cyber Quest",
+        "color": "#00f0ff",
+        "date": "OCTOBER 31, 2026 • 02:30 PM IST",
+        "venue": "Central Quadrangle & Campus Arena, SUIET Mukka, Mangaluru",
+        "tag": "CAMPUS CIPHER QUEST"
+    },
+    "free-fire": {
+        "title": "Free Fire eSports Battle",
+        "color": "#ef4444",
+        "date": "NOVEMBER 01, 2026 • 11:00 AM IST",
+        "venue": "eSports Arena (Main Stage), SUIET Mukka, Mangaluru",
+        "tag": "TACTICAL BATTLE ROYALE"
+    }
+}
+
+
+def _send_single_confirmation_email(
+    to_email: str,
+    participant_name: str,
+    is_leader: bool,
+    reg_id: str,
+    event_id: str,
+    event_name: str,
+    team_name: str,
+    college_name: str,
+    all_members: list,
+    is_solo: bool,
+    amount_paid: str,
+    payment_id: str,
+    smtp_email: str,
+    smtp_password: str,
+    smtp_host: str,
+    smtp_port: int
+) -> bool:
+    """Send individual customized confirmation email to a single participant."""
+    try:
+        ev_info = EVENT_META_MAP.get(event_id, {
+            "title": event_name or "CODEMEET 2026 Event",
+            "color": "#ccff00",
+            "date": "OCTOBER 31 - NOVEMBER 02, 2026",
+            "venue": "SUIET Campus, Mukka, Mangaluru",
+            "tag": "OFFICIAL EVENT"
+        })
+
+        color = ev_info["color"]
+        event_title = ev_info["title"]
+        event_date = ev_info["date"]
+        event_venue = ev_info["venue"]
+        event_tag = ev_info["tag"]
+        role_label = "SOLO PARTICIPANT" if is_solo else ("TEAM LEADER" if is_leader else "TEAM MEMBER")
+        display_team_name = "Solo Participant" if is_solo else (team_name or "Team")
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"Confirmed: CODEMEET 2026 Registration - {event_title} [{reg_id}]"
+        msg["From"] = f"CODEMEET 2026 Registration Desk <{smtp_email}>"
+        msg["To"] = to_email
+        msg["Reply-To"] = smtp_email
+        msg["Date"] = email.utils.formatdate(localtime=True)
+        msg["Message-ID"] = email.utils.make_msgid(domain="srinivasuniversity.edu.in")
+        msg["X-Auto-Response-Suppress"] = "All"
+        msg["Auto-Submitted"] = "auto-generated"
+        msg["Precedence"] = "bulk"
+
+        # Build roster lines for plain text & HTML
+        roster_text_lines = []
+        roster_html_rows = []
+        for idx, m in enumerate(all_members):
+            m_name = m.get("name", f"Member {idx + 1}")
+            m_email = m.get("email", "")
+            m_phone = m.get("phone", "")
+            m_role = "Leader" if (m.get("is_leader") or idx == 0) else f"Member 0{idx + 1}"
+            roster_text_lines.append(f"  {idx + 1}. {m_name} ({m_role}) - {m_email} | {m_phone}")
+
+            is_current_user = (m_email.strip().lower() == to_email.strip().lower())
+            bg_style = "background-color: rgba(204, 255, 0, 0.08);" if is_current_user else ""
+            roster_html_rows.append(f"""
+              <tr style="{bg_style}">
+                <td style="padding: 10px 12px; font-size: 13px; color: #ffffff; border-bottom: 1px solid rgba(255,255,255,0.06);">
+                  <strong style="color: {'#ccff00' if is_current_user else '#ffffff'};">{m_name}</strong>
+                  {' <span style="background-color: #ccff00; color: #000; font-size: 9px; font-weight: bold; padding: 2px 6px; border-radius: 4px; margin-left: 4px;">YOU</span>' if is_current_user else ''}
+                </td>
+                <td style="padding: 10px 12px; font-size: 12px; color: #a1a1aa; border-bottom: 1px solid rgba(255,255,255,0.06); font-family: monospace;">
+                  {m_role}
+                </td>
+                <td style="padding: 10px 12px; font-size: 12px; color: #71717a; border-bottom: 1px solid rgba(255,255,255,0.06); font-family: monospace;">
+                  {m_phone}
+                </td>
+              </tr>
+            """)
+
+        roster_text_str = "\n".join(roster_text_lines)
+        roster_html_str = "".join(roster_html_rows)
+
+        # 1. Plain Text Alternative (Anti-Spam & Text Readers)
+        text_content = f"""CODEMEET 2026 - OFFICIAL REGISTRATION CONFIRMATION
+
+Hello {participant_name},
+
+Congratulations! Your registration for CODEMEET 2026 has been successfully confirmed.
+
+============================================================
+PASS DETAILS & VERIFICATION
+============================================================
+Registration ID : {reg_id}
+Event           : {event_title}
+Role            : {role_label}
+Team Name       : {display_team_name}
+Institution     : {college_name}
+Payment Status  : CONFIRMED (₹{amount_paid})
+Ref / Order ID  : {payment_id or 'OFFICIAL_REGISTERED'}
+
+============================================================
+SCHEDULE & VENUE
+============================================================
+Date / Time     : {event_date}
+Venue           : {event_venue}
+
+{f'''============================================================
+TEAM ROSTER ({len(all_members)} Participants)
+============================================================
+{roster_text_str}
+''' if not is_solo else ''}
+============================================================
+IMPORTANT INSTRUCTIONS FOR PARTICIPANTS
+============================================================
+1. Please bring your physical College / Institution Photo ID card.
+2. Present this Registration ID ({reg_id}) or show this email at the registration desk upon arrival.
+3. Arrive at the venue at least 30 minutes prior to scheduled start time.
+4. Download the Official Rulebook from our portal for technical guidelines & evaluation rubrics.
+
+Need assistance? Reply directly to this email or reach out to webflowcommunity@srinivasuniversity.edu.in.
+
+---
+Srinivas University Institute of Engineering and Technology (SUIET)
+Mukka, Mangaluru, Karnataka 574146
+Organized by Department of CSE & Webflow Student Community
+"""
+
+        # 2. Responsive & Anti-Spam Clean HTML
+        html_content = f"""<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="supported-color-schemes" content="light dark" />
+  <title>Registration Confirmation - CODEMEET 2026</title>
+  <style type="text/css">
+    body, table, td, p, a, li, blockquote {{ -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }}
+    table, td {{ mso-table-lspace: 0pt; mso-table-rspace: 0pt; }}
+    img {{ -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }}
+    body {{ margin: 0 !important; padding: 0 !important; width: 100% !important; background-color: #050507; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }}
+    @media only screen and (max-width: 600px) {{
+      .email-wrapper {{ width: 100% !important; padding: 12px !important; }}
+      .reg-badge {{ font-size: 20px !important; }}
+      .detail-label {{ width: 100px !important; }}
+    }}
+  </style>
+</head>
+<body style="margin: 0; padding: 24px 8px; background-color: #050507; color: #ffffff;">
+  <center>
+    <table border="0" cellpadding="0" cellspacing="0" width="100%" class="email-wrapper" style="max-width: 600px; margin: 0 auto;">
+      
+      <!-- Top Badge -->
+      <tr>
+        <td align="center" style="padding-bottom: 20px;">
+          <table border="0" cellpadding="0" cellspacing="0">
+            <tr>
+              <td align="center" style="background-color: rgba(204, 255, 0, 0.1); border: 1px solid #ccff00; border-radius: 20px; padding: 4px 16px;">
+                <span style="font-family: 'Courier New', Courier, monospace; font-size: 11px; font-weight: bold; letter-spacing: 2px; color: #ccff00; text-transform: uppercase;">
+                  // OFFICIAL ENTRY PASS • {event_tag}
+                </span>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+
+      <!-- Main Card Container -->
+      <tr>
+        <td>
+          <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #0c0e14; border: 1px solid #27272a; border-radius: 20px; overflow: hidden; box-shadow: 0 16px 50px rgba(0, 0, 0, 0.9);">
+            
+            <!-- Glow Accent Top Border -->
+            <tr>
+              <td style="background: linear-gradient(90deg, {color} 0%, #00f0ff 100%); height: 4px; line-height: 4px; font-size: 4px;">&nbsp;</td>
+            </tr>
+
+            <!-- Header Content -->
+            <tr>
+              <td style="padding: 32px 28px 20px 28px;">
+                <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                  <tr>
+                    <td>
+                      <div style="font-size: 11px; font-family: monospace; font-weight: bold; color: {color}; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 6px;">
+                        REGISTRATION CONFIRMED
+                      </div>
+                      <h1 style="margin: 0; font-size: 24px; font-weight: 900; letter-spacing: -0.5px; color: #ffffff; line-height: 1.2;">
+                        Congratulations, {participant_name}!
+                      </h1>
+                      <p style="margin: 8px 0 0 0; font-size: 14px; line-height: 22px; color: #a1a1aa;">
+                        You are officially registered for <strong style="color: #ffffff;">CODEMEET 2026 - {event_title}</strong>. We look forward to seeing you compete!
+                      </p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- Digital Pass Card Box -->
+            <tr>
+              <td style="padding: 0 28px 24px 28px;">
+                <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #000000; border: 2px dashed {color}; border-radius: 16px; overflow: hidden;">
+                  <tr>
+                    <td style="padding: 20px 20px 16px 20px; background-color: rgba(255,255,255,0.02); border-bottom: 1px dashed rgba(255,255,255,0.15);">
+                      <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                        <tr>
+                          <td>
+                            <div style="font-size: 10px; font-family: monospace; color: #71717a; text-transform: uppercase; letter-spacing: 1px;">
+                              ENTRY PASS / REGISTRATION ID
+                            </div>
+                            <div class="reg-badge" style="font-family: 'Courier New', Courier, monospace; font-size: 24px; font-weight: 900; letter-spacing: 2px; color: {color}; margin-top: 4px;">
+                              {reg_id}
+                            </div>
+                          </td>
+                          <td align="right" valign="top">
+                            <span style="background-color: rgba(34, 197, 94, 0.15); border: 1px solid rgba(34, 197, 94, 0.4); color: #4ade80; font-size: 10px; font-weight: bold; font-family: monospace; padding: 4px 10px; border-radius: 6px; text-transform: uppercase;">
+                              PAID &amp; CONFIRMED
+                            </span>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+
+                  <!-- Pass Details Grid -->
+                  <tr>
+                    <td style="padding: 16px 20px;">
+                      <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                        <tr>
+                          <td class="detail-label" style="padding: 6px 0; font-size: 12px; color: #71717a; font-family: monospace; width: 130px;">
+                            EVENT
+                          </td>
+                          <td style="padding: 6px 0; font-size: 13px; font-weight: bold; color: #ffffff;">
+                            {event_title}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td class="detail-label" style="padding: 6px 0; font-size: 12px; color: #71717a; font-family: monospace;">
+                            YOUR ROLE
+                          </td>
+                          <td style="padding: 6px 0; font-size: 13px; font-weight: 600; color: {color};">
+                            {role_label}
+                          </td>
+                        </tr>
+                        {f'''<tr>
+                          <td class="detail-label" style="padding: 6px 0; font-size: 12px; color: #71717a; font-family: monospace;">
+                            TEAM NAME
+                          </td>
+                          <td style="padding: 6px 0; font-size: 13px; font-weight: bold; color: #ffffff;">
+                            {display_team_name}
+                          </td>
+                        </tr>''' if not is_solo else ''}
+                        <tr>
+                          <td class="detail-label" style="padding: 6px 0; font-size: 12px; color: #71717a; font-family: monospace;">
+                            INSTITUTION
+                          </td>
+                          <td style="padding: 6px 0; font-size: 13px; color: #e4e4e7;">
+                            {college_name}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td class="detail-label" style="padding: 6px 0; font-size: 12px; color: #71717a; font-family: monospace;">
+                            TRANSACTION ID
+                          </td>
+                          <td style="padding: 6px 0; font-size: 12px; font-family: monospace; color: #a1a1aa;">
+                            {payment_id or 'OFFICIAL_VERIFIED'}
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- Event Schedule & Location Box -->
+            <tr>
+              <td style="padding: 0 28px 24px 28px;">
+                <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 16px;">
+                  <tr>
+                    <td style="padding-bottom: 10px;">
+                      <div style="font-size: 11px; font-family: monospace; font-weight: bold; color: #ccff00; text-transform: uppercase; letter-spacing: 1px;">
+                        📅 SCHEDULE &amp; VENUE
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="font-size: 13px; line-height: 20px; color: #ffffff; padding-bottom: 8px;">
+                      <strong>Date &amp; Time:</strong> {event_date}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="font-size: 13px; line-height: 20px; color: #d4d4d8;">
+                      <strong>Venue:</strong> {event_venue}
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- Team Roster Section (If Team Event) -->
+            {f'''<tr>
+              <td style="padding: 0 28px 24px 28px;">
+                <div style="font-size: 11px; font-family: monospace; font-weight: bold; color: #a1a1aa; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;">
+                  👥 REGISTERED TEAM ROSTER ({len(all_members)} Members)
+                </div>
+                <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #000000; border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; overflow: hidden;">
+                  <thead>
+                    <tr style="background-color: rgba(255,255,255,0.04);">
+                      <th align="left" style="padding: 8px 12px; font-size: 10px; font-family: monospace; color: #71717a; text-transform: uppercase;">Participant</th>
+                      <th align="left" style="padding: 8px 12px; font-size: 10px; font-family: monospace; color: #71717a; text-transform: uppercase;">Role</th>
+                      <th align="left" style="padding: 8px 12px; font-size: 10px; font-family: monospace; color: #71717a; text-transform: uppercase;">Contact</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {roster_html_str}
+                  </tbody>
+                </table>
+              </td>
+            </tr>''' if (not is_solo and len(all_members) > 1) else ''}
+
+            <!-- Important Guidelines Box -->
+            <tr>
+              <td style="padding: 0 28px 28px 28px;">
+                <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: rgba(204,255,0,0.03); border-left: 3px solid {color}; border-radius: 6px; padding: 14px 16px;">
+                  <tr>
+                    <td>
+                      <div style="font-size: 12px; font-weight: bold; color: #ffffff; margin-bottom: 6px;">
+                        Check-in &amp; Reporting Guidelines:
+                      </div>
+                      <ul style="margin: 0; padding-left: 18px; font-size: 12px; line-height: 20px; color: #a1a1aa;">
+                        <li>Carry your physical College / Institution Photo ID card.</li>
+                        <li>Show this email or quote your Registration ID (<code style="color: {color};">{reg_id}</code>) at the campus help desk.</li>
+                        <li>Report at least 30 minutes prior to the start of the event.</li>
+                      </ul>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- Footer Help Note -->
+            <tr>
+              <td style="padding: 18px 28px; background-color: rgba(0,0,0,0.4); border-top: 1px solid rgba(255, 255, 255, 0.06); text-align: center;">
+                <p style="margin: 0; font-size: 12px; line-height: 18px; color: #71717a;">
+                  Questions or queries? Reply directly to this email or contact us at <a href="mailto:webflowcommunity@srinivasuniversity.edu.in" style="color: {color}; text-decoration: none;">webflowcommunity@srinivasuniversity.edu.in</a>
+                </p>
+              </td>
+            </tr>
+
+          </table>
+        </td>
+      </tr>
+
+      <!-- Official Institute Footer -->
+      <tr>
+        <td align="center" style="padding-top: 24px;">
+          <p style="margin: 0; font-size: 11px; line-height: 18px; color: #52525b; text-align: center;">
+            <strong>Srinivas University Institute of Engineering and Technology (SUIET)</strong><br />
+            Mukka, Mangaluru, Karnataka 574146 • In collaboration with Webflow Student Community<br />
+            You received this email because you are registered as a participant for CODEMEET 2026.
+          </p>
+        </td>
+      </tr>
+
+    </table>
+  </center>
+</body>
+</html>
+"""
+
+        part1 = MIMEText(text_content, "plain", "utf-8")
+        part2 = MIMEText(html_content, "html", "utf-8")
+        msg.attach(part1)
+        msg.attach(part2)
+
+        server = smtplib.SMTP(smtp_host, smtp_port, timeout=15)
+        server.ehlo()
+        server.starttls()
+        server.ehlo()
+        server.login(smtp_email, smtp_password)
+        server.sendmail(smtp_email, [to_email], msg.as_string())
+        server.quit()
+
+        print(f"[EMAIL SUCCESS] Dispatched confirmation email to participant: {participant_name} <{to_email}> for event {event_id} ({reg_id})")
+        return True
+    except Exception as e:
+        print(f"[EMAIL ERROR] Failed to send confirmation email to {to_email}: {str(e)}")
+        return False
+
+
+def send_registration_confirmation_emails(
+    reg_id: str,
+    event_id: str,
+    event_name: str,
+    team_name: str,
+    college_name: str,
+    members: list,
+    is_solo: bool,
+    amount_paid: str = "100",
+    payment_id: str = ""
+):
+    """
+    Sends beautiful, customized confirmation emails to ALL participants in the team (or solo participant).
+    Non-blocking / resilient: Errors for one recipient do not break other recipients.
+    """
+    import threading
+
+    def _worker():
+        smtp_email = os.getenv("SMTP_EMAIL", "").strip()
+        smtp_password = os.getenv("SMTP_PASSWORD", "").replace(" ", "").strip()
+        smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com").strip()
+        smtp_port = int(os.getenv("SMTP_PORT", "587"))
+
+        if not smtp_email or not smtp_password:
+            print(f"[EMAIL SERVICE] Console Mode: Registration confirmed for {reg_id} with {len(members)} participant(s). Configure SMTP credentials in backend/.env to dispatch live emails.")
+            return
+
+        print(f"[EMAIL SERVICE] Starting batch confirmation email dispatch for {reg_id} ({len(members)} recipient(s))...")
+
+        for idx, member in enumerate(members):
+            to_email = (member.get("email") or "").strip()
+            name = (member.get("name") or "Participant").strip()
+            is_leader = bool(member.get("is_leader", False) or idx == 0)
+
+            if not to_email or "@" not in to_email:
+                continue
+
+            _send_single_confirmation_email(
+                to_email=to_email,
+                participant_name=name,
+                is_leader=is_leader,
+                reg_id=reg_id,
+                event_id=event_id,
+                event_name=event_name,
+                team_name=team_name,
+                college_name=college_name,
+                all_members=members,
+                is_solo=is_solo,
+                amount_paid=amount_paid,
+                payment_id=payment_id,
+                smtp_email=smtp_email,
+                smtp_password=smtp_password,
+                smtp_host=smtp_host,
+                smtp_port=smtp_port
+            )
+
+    # Spawn thread to avoid blocking FastAPI request handling
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+
