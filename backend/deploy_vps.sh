@@ -8,9 +8,10 @@ echo "  Target Directory: $CURRENT_DIR"
 echo "=================================================="
 
 # 1. Prepare production .env
-if [ -f "env_prod.txt" ]; then
-    echo "[1/6] Setting up production .env file..."
-    cp env_prod.txt .env
+if [ ! -f ".env" ]; then
+    echo "[1/6] Creating .env from .env.example..."
+    cp .env.example .env
+    echo "⚠️ NOTE: Please edit .env with your production credentials."
 fi
 
 # 2. Install system packages

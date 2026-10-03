@@ -47,31 +47,35 @@ RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "6Bs9uraea30uFMlFH7NoQt4n
 # Initialize Razorpay client
 razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 
-# In-memory secure state for 2FA OTPs and active admin sessions
-otp_store: Dict[str, Any] = {}
-active_sessions: Dict[str, float] = {}
+ENABLE_DOCS = os.getenv("ENABLE_DOCS", "false").lower() in ("true", "1", "yes")
 
 app = FastAPI(
     title="CodeMeet 2026 API",
     description="Backend API with Razorpay Standard Checkout & 2FA Admin for CodeMeet 2026",
-    version="1.3.0"
+    version="1.3.0",
+    docs_url="/docs" if ENABLE_DOCS else None,
+    redoc_url="/redoc" if ENABLE_DOCS else None,
+    openapi_url="/openapi.json" if ENABLE_DOCS else None,
 )
 
 # Initialize database
 init_db()
 
-# Configure CORS
-origins = [
+# Configure CORS - Restrict strictly to official frontend domains
+allowed_origins = [
+    "https://suiet.website",
+    "https://www.suiet.website",
+    "https://api.hackathon.suiet.website",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "http://localhost:3001",
-    os.getenv("FRONTEND_URL", "http://localhost:3000"),
-    "*"
 ]
+frontend_url = os.getenv("FRONTEND_URL", "").strip()
+if frontend_url and frontend_url not in allowed_origins:
+    allowed_origins.append(frontend_url)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

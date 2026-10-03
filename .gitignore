@@ -30,7 +30,7 @@ backend/data/*.sqlite3
 *.db
 *.sqlite3
 
-# Environment Variables
+# Environment Variables & Sensitive Configs
 .env
 .env.local
 .env.development.local
@@ -41,6 +41,16 @@ backend/data/*.sqlite3
 **/.env.*.local
 backend/.env
 frontend/.env.local
+env_prod.txt
+**/env_prod.txt
+backend/env_prod.txt
+*.pem
+*.key
+id_rsa*
+
+# Uploaded Assets & Temp
+backend/uploads/*.pdf
+!backend/uploads/.gitkeep
 
 # Logs & Debugging
 logs
