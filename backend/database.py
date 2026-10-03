@@ -1,6 +1,7 @@
 import sqlite3
 import json
 import os
+import time
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
@@ -44,6 +45,14 @@ def init_db():
             amount_paise INTEGER NOT NULL,
             currency TEXT DEFAULT 'INR',
             updated_at TEXT NOT NULL
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS admin_sessions (
+            token TEXT PRIMARY KEY,
+            expires_at REAL NOT NULL,
+            created_at TEXT NOT NULL
         )
     """)
 
@@ -291,3 +300,39 @@ def delete_registration(reg_id: str) -> bool:
     conn.commit()
     conn.close()
     return deleted
+
+def save_admin_session(token: str, expires_at: float) -> None:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    now_str = datetime.utcnow().isoformat() + "Z"
+    cursor.execute("""
+        INSERT OR REPLACE INTO admin_sessions (token, expires_at, created_at)
+        VALUES (?, ?, ?)
+    """, (token, expires_at, now_str))
+    conn.commit()
+    conn.close()
+
+def is_valid_admin_session(token: str) -> bool:
+    if not token:
+        return False
+    now = time.time()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT expires_at FROM admin_sessions WHERE token = ?", (token,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        expires_at = float(row["expires_at"])
+        if expires_at > now:
+            return True
+        else:
+            delete_admin_session(token)
+    return False
+
+def delete_admin_session(token: str) -> None:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM admin_sessions WHERE token = ?", (token,))
+    conn.commit()
+    conn.close()
+

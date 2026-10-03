@@ -203,9 +203,43 @@ export default function AdminPage() {
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
+  const getAdminToken = (): string => {
+    if (typeof window === "undefined") return "";
+    return (
+      localStorage.getItem("codemeet_admin_session_token") ||
+      sessionStorage.getItem("codemeet_admin_session_token") ||
+      ""
+    );
+  };
+
+  const saveAdminToken = (token: string) => {
+    try {
+      localStorage.setItem("codemeet_admin_session_token", token);
+      sessionStorage.setItem("codemeet_admin_session_token", token);
+    } catch {
+      // ignore
+    }
+  };
+
+  const clearAdminToken = () => {
+    try {
+      localStorage.removeItem("codemeet_admin_session_token");
+      sessionStorage.removeItem("codemeet_admin_session_token");
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleUnauthorized = () => {
+    clearAdminToken();
+    setAuthStep("password");
+    setAuthError("Your admin session has expired. Please enter your Security Key & OTP to log in.");
+    soundFX.playClick();
+  };
+
   // Check saved session on mount
   useEffect(() => {
-    const savedToken = sessionStorage.getItem("codemeet_admin_session_token");
+    const savedToken = getAdminToken();
     if (savedToken && savedToken.startsWith("cm26_sec_")) {
       setAuthStep("authenticated");
       fetchStats(savedToken);
@@ -226,7 +260,7 @@ export default function AdminPage() {
 
   const getAuthHeaders = (overrideToken?: string) => ({
     "Content-Type": "application/json",
-    "x-admin-token": overrideToken || sessionStorage.getItem("codemeet_admin_session_token") || "",
+    "x-admin-token": overrideToken || getAdminToken(),
   });
 
   // Step 1: Request OTP
@@ -255,7 +289,7 @@ export default function AdminPage() {
         soundFX.playClick();
       }
     } catch (err) {
-      setAuthError("Failed to connect to backend authentication server. Make sure backend is running on port 8000.");
+      setAuthError("Failed to connect to backend authentication server. Make sure backend is running.");
     } finally {
       setIsLoadingAuth(false);
     }
@@ -281,7 +315,7 @@ export default function AdminPage() {
       const data = await res.json();
 
       if (res.ok && data.token) {
-        sessionStorage.setItem("codemeet_admin_session_token", data.token);
+        saveAdminToken(data.token);
         setAuthStep("authenticated");
         soundFX.playSuccess();
         fetchStats(data.token);
@@ -301,7 +335,11 @@ export default function AdminPage() {
 
   const handleLogout = () => {
     soundFX.playClick();
-    sessionStorage.removeItem("codemeet_admin_session_token");
+    fetch(`${apiUrl}/api/admin/logout`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+    }).catch(() => {});
+    clearAdminToken();
     setAuthStep("password");
     setPassword("");
     setOtpCode("");
@@ -312,6 +350,10 @@ export default function AdminPage() {
       const res = await fetch(`${apiUrl}/api/admin/stats`, {
         headers: getAuthHeaders(tokenOverride),
       });
+      if (res.status === 401) {
+        handleUnauthorized();
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
         if (data.stats) setStats(data.stats);
@@ -331,6 +373,10 @@ export default function AdminPage() {
           : `${apiUrl}/api/admin/registrations`;
 
       const res = await fetch(url, { headers: getAuthHeaders(tokenOverride) });
+      if (res.status === 401) {
+        handleUnauthorized();
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
         setRegistrations(data.registrations || []);
@@ -388,6 +434,10 @@ export default function AdminPage() {
       });
 
       const data = await res.json();
+      if (res.status === 401) {
+        handleUnauthorized();
+        return;
+      }
       if (res.ok && data.success) {
         soundFX.playSuccess();
         setEventPricings((prev) => ({ ...prev, [eventId]: data.pricing }));
@@ -533,6 +583,10 @@ export default function AdminPage() {
         method: "DELETE",
         headers: getAuthHeaders(),
       });
+      if (res.status === 401) {
+        handleUnauthorized();
+        return;
+      }
       if (res.ok) {
         soundFX.playSuccess();
         setRegistrations((prev) => prev.filter((r) => r.id !== regId));
@@ -597,6 +651,12 @@ export default function AdminPage() {
         body: JSON.stringify(payload),
       });
 
+      if (res.status === 401) {
+        handleUnauthorized();
+        setIsAddModalOpen(false);
+        return;
+      }
+
       if (res.ok) {
         soundFX.playSuccess();
         setAddSuccessMsg("Registration successfully created!");
@@ -616,7 +676,8 @@ export default function AdminPage() {
           fetchRegistrations(selectedEvent);
         }, 1000);
       } else {
-        alert("Failed to add participant. Please verify fields.");
+        const errData = await res.json().catch(() => ({}));
+        alert(errData.detail || "Failed to add participant. Please verify fields.");
       }
     } catch (err) {
       console.error("Add error:", err);

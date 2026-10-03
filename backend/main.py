@@ -27,7 +27,10 @@ from database import (
     delete_registration,
     get_event_pricings,
     get_event_pricing,
-    update_event_pricing
+    update_event_pricing,
+    save_admin_session,
+    is_valid_admin_session,
+    delete_admin_session
 )
 from email_service import send_admin_otp_email, send_registration_confirmation_emails
 
@@ -176,15 +179,10 @@ def verify_admin_auth(
     if not token:
         raise HTTPException(status_code=401, detail="Unauthorized: Missing security token")
 
-    now = time.time()
-    if token in active_sessions:
-        if active_sessions[token] > now:
-            return True
-        else:
-            del active_sessions[token]
-            raise HTTPException(status_code=401, detail="Session expired. Please re-authenticate.")
+    if is_valid_admin_session(token):
+        return True
 
-    raise HTTPException(status_code=401, detail="Unauthorized: Invalid security session token")
+    raise HTTPException(status_code=401, detail="Unauthorized: Invalid or expired security session token. Please re-authenticate.")
 
 @app.get("/")
 def read_root():
@@ -596,13 +594,26 @@ def admin_verify_otp(data: VerifyOTPRequest):
     otp_store.clear()
 
     session_token = f"cm26_sec_{secrets.token_urlsafe(32)}"
-    active_sessions[session_token] = time.time() + (12 * 3600)
+    expires_at = time.time() + (72 * 3600)  # 3 days persistent session
+    save_admin_session(session_token, expires_at)
 
     return {
         "success": True,
         "message": "2FA Authentication successful. Welcome to Admin Portal.",
         "token": session_token
     }
+
+@app.post("/api/admin/logout")
+def admin_logout(
+    x_admin_token: Optional[str] = Header(None, alias="x-admin-token"),
+    authorization: Optional[str] = Header(None)
+):
+    token = x_admin_token
+    if not token and authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1]
+    if token:
+        delete_admin_session(token)
+    return {"success": True, "message": "Logged out successfully"}
 
 @app.get("/api/admin/stats")
 def admin_stats(_: bool = Depends(verify_admin_auth)):
