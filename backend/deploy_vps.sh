@@ -1,8 +1,10 @@
 #!/bin/bash
 set -e
 
+CURRENT_DIR=$(pwd)
 echo "=================================================="
 echo "  CODEMEET 2026 AUTO-DEPLOYMENT ON CONTABO VPS    "
+echo "  Target Directory: $CURRENT_DIR"
 echo "=================================================="
 
 # 1. Prepare production .env
@@ -25,7 +27,23 @@ pip install -r requirements.txt
 
 # 4. Configure Systemd Service (Port 8001)
 echo "[4/6] Installing and starting systemd service (Port 8001)..."
-sudo cp codemeet-backend.service /etc/systemd/system/codemeet-backend.service
+cat <<EOF | sudo tee /etc/systemd/system/codemeet-backend.service > /dev/null
+[Unit]
+Description=CodeMeet 2026 FastAPI Backend Daemon
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=$CURRENT_DIR
+ExecStart=$CURRENT_DIR/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8001 --workers 4
+Restart=always
+RestartSec=5
+EnvironmentFile=$CURRENT_DIR/.env
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 sudo systemctl daemon-reload
 sudo systemctl enable codemeet-backend
 sudo systemctl restart codemeet-backend
