@@ -56,6 +56,15 @@ def init_db():
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS admin_otps (
+            id TEXT PRIMARY KEY,
+            otp TEXT NOT NULL,
+            expires_at REAL NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    """)
+
     # Seed default pricing if table is empty
     cursor.execute("SELECT COUNT(*) as cnt FROM event_pricing")
     count = cursor.fetchone()["cnt"]
@@ -335,4 +344,37 @@ def delete_admin_session(token: str) -> None:
     cursor.execute("DELETE FROM admin_sessions WHERE token = ?", (token,))
     conn.commit()
     conn.close()
+
+def save_admin_otp(otp_code: str, expires_at: float) -> None:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    now_str = datetime.utcnow().isoformat() + "Z"
+    cursor.execute("DELETE FROM admin_otps")
+    cursor.execute("""
+        INSERT INTO admin_otps (id, otp, expires_at, created_at)
+        VALUES ('active_otp', ?, ?, ?)
+    """, (otp_code, expires_at, now_str))
+    conn.commit()
+    conn.close()
+
+def get_admin_otp() -> Optional[Dict[str, Any]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT otp, expires_at FROM admin_otps WHERE id = 'active_otp'")
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return {
+            "otp": str(row["otp"]),
+            "expires_at": float(row["expires_at"])
+        }
+    return None
+
+def clear_admin_otp() -> None:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM admin_otps")
+    conn.commit()
+    conn.close()
+
 

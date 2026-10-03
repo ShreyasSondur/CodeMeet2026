@@ -30,7 +30,10 @@ from database import (
     update_event_pricing,
     save_admin_session,
     is_valid_admin_session,
-    delete_admin_session
+    delete_admin_session,
+    save_admin_otp,
+    get_admin_otp,
+    clear_admin_otp
 )
 from email_service import send_admin_otp_email, send_registration_confirmation_emails
 
@@ -562,8 +565,7 @@ def admin_request_otp(data: RequestOTPRequest):
     otp_code = f"{random.randint(100000, 999999)}"
     expires_at = time.time() + 300  # 5 minutes validity
 
-    otp_store["otp"] = otp_code
-    otp_store["expires_at"] = expires_at
+    save_admin_otp(otp_code, expires_at)
 
     target_email = os.getenv("ADMIN_EMAIL", os.getenv("SMTP_EMAIL", "admin@codemeet.com")).strip()
 
@@ -582,16 +584,21 @@ def admin_verify_otp(data: VerifyOTPRequest):
     if data.password.strip() != ADMIN_PASSWORD:
         raise HTTPException(status_code=401, detail="Invalid admin security key")
 
-    stored_otp = otp_store.get("otp")
-    expires_at = otp_store.get("expires_at", 0)
+    stored_data = get_admin_otp()
+    if not stored_data:
+        raise HTTPException(status_code=400, detail="No active OTP found. Please request a new code.")
 
-    if not stored_otp or time.time() > expires_at:
+    stored_otp = stored_data.get("otp")
+    expires_at = stored_data.get("expires_at", 0)
+
+    if time.time() > expires_at:
+        clear_admin_otp()
         raise HTTPException(status_code=400, detail="OTP has expired. Please request a new code.")
 
     if data.otp.strip() != stored_otp:
         raise HTTPException(status_code=400, detail="Incorrect OTP verification code. Please try again.")
 
-    otp_store.clear()
+    clear_admin_otp()
 
     session_token = f"cm26_sec_{secrets.token_urlsafe(32)}"
     expires_at = time.time() + (72 * 3600)  # 3 days persistent session
