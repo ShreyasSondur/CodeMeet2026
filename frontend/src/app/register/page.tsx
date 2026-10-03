@@ -271,45 +271,64 @@ function RegisterContent() {
     const leaderPhone = activeEvent.isSolo ? soloParticipant.phone : members[0]?.phone;
 
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
-    const rzpKey = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_TifQ6oZpnrGXwZ";
+    const defaultRzpKey = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_TjUjaEkXrem1Yo";
 
-    // Attempt to create backend order if available
-    let orderId: string | null = null;
+    // 1. BACKEND - Call /api/create-order
+    let orderData: { order_id: string; amount: number; currency: string; key_id: string } | null = null;
     try {
-      const orderRes = await fetch(`${apiUrl}/api/payment/create-order`, {
+      const orderRes = await fetch(`${apiUrl}/api/create-order`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          amount: 1,
+          amount: 100, // 100 paise = ₹1.00 (Test mode)
+          currency: "INR",
           event_id: activeEvent.id,
           college_name: collegeName,
         }),
       });
+
       if (orderRes.ok) {
-        const orderData = await orderRes.json();
-        if (orderData.order_id) {
-          orderId = orderData.order_id;
-        }
+        orderData = await orderRes.json();
+      } else {
+        const errJson = await orderRes.json().catch(() => ({}));
+        throw new Error(errJson.detail || "Failed to initialize secure payment order.");
       }
-    } catch (e) {
-      console.warn("Backend order creation warning:", e);
-    }
-
-    const isLoaded = await loadRazorpayScript();
-
-    if (!isLoaded || typeof (window as any).Razorpay === "undefined") {
-      console.warn("Razorpay script not available, completing direct test registration");
-      await completeRegistrationWithBackend(`TEST_PASS_${Math.floor(100000 + Math.random() * 900000)}`);
+    } catch (err: any) {
+      console.error("Order creation error:", err);
+      setIsSubmitting(false);
+      setPaymentError(err.message || "Could not connect to payment gateway. Please make sure the backend server is running.");
       return;
     }
 
+    if (!orderData || !orderData.order_id) {
+      setIsSubmitting(false);
+      setPaymentError("Could not retrieve order ID from Razorpay. Please retry.");
+      return;
+    }
+
+    // 2. Ensure Razorpay Checkout script is loaded
+    const isLoaded = await loadRazorpayScript();
+    if (!isLoaded || typeof (window as any).Razorpay === "undefined") {
+      setIsSubmitting(false);
+      setPaymentError("Razorpay SDK could not be loaded. Please check your internet connection.");
+      return;
+    }
+
+    const memberPayload = activeEvent.isSolo
+      ? [{ name: soloParticipant.name, email: soloParticipant.email, phone: soloParticipant.phone, is_leader: true }]
+      : members
+          .filter((m) => m.name.trim() !== "")
+          .map((m, idx) => ({ ...m, is_leader: idx === 0 }));
+
+    // 3. FRONTEND - Open Razorpay Modal with Order ID
     const options: Record<string, any> = {
-      key: rzpKey,
-      amount: 100, // 100 paise = ₹1.00 (Test mode)
-      currency: "INR",
+      key: orderData.key_id || defaultRzpKey,
+      amount: orderData.amount, // in paise
+      currency: orderData.currency || "INR",
       name: "SUIET Mukka • Webflow Community",
-      description: `CODEMEET 2026 - ${activeEvent.title} (₹1.00 Test)`,
+      description: `CODEMEET 2026 - ${activeEvent.title} (Test ₹1.00)`,
       image: "/favicon.svg",
+      order_id: orderData.order_id,
       prefill: {
         name: leaderName,
         email: leaderEmail,
@@ -319,10 +338,51 @@ function RegisterContent() {
         color: activeEvent.color || "#ccff00",
         backdrop_color: "#050507",
       },
-      handler: async function (response: any) {
-        const paymentId = response.razorpay_payment_id || `pay_test_${Math.floor(100000 + Math.random() * 900000)}`;
-        setConfirmedPaymentId(paymentId);
-        await completeRegistrationWithBackend(paymentId);
+      handler: async function (response: {
+        razorpay_payment_id: string;
+        razorpay_order_id: string;
+        razorpay_signature: string;
+      }) {
+        try {
+          // 4. BACKEND - Call /api/verify-payment with HMAC-SHA256 signature
+          const verifyRes = await fetch(`${apiUrl}/api/verify-payment`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              event_id: activeEvent.id,
+              event_name: activeEvent.title,
+              team_name: activeEvent.isSolo ? "" : teamName,
+              college_name: collegeName,
+              is_solo: activeEvent.isSolo,
+              members: memberPayload,
+              amount_paid: "1",
+            }),
+          });
+
+          if (verifyRes.ok) {
+            const resultData = await verifyRes.json();
+            setConfirmedRegId(
+              resultData.registration_id ||
+                `CM26-${activeEvent.id.toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`
+            );
+            setConfirmedPaymentId(response.razorpay_payment_id);
+            setIsSubmitting(false);
+            setIsSuccess(true);
+            soundFX.playSuccess();
+          } else {
+            const errData = await verifyRes.json().catch(() => ({}));
+            setIsSubmitting(false);
+            setPaymentError(errData.detail || "Payment verification failed. Please contact support.");
+            soundFX.playClick();
+          }
+        } catch (verErr: any) {
+          console.error("Verification error:", verErr);
+          setIsSubmitting(false);
+          setPaymentError("Network error during payment verification. Please contact support.");
+        }
       },
       modal: {
         ondismiss: function () {
@@ -332,20 +392,19 @@ function RegisterContent() {
       },
     };
 
-    if (orderId) {
-      options.order_id = orderId;
-    }
-
     try {
       const rzp = new (window as any).Razorpay(options);
       rzp.on("payment.failed", function (response: any) {
         setIsSubmitting(false);
-        setPaymentError(response.error?.description || "Payment transaction failed. Please retry.");
+        setPaymentError(
+          response.error?.description || "Payment transaction failed. Please retry."
+        );
       });
       rzp.open();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Razorpay trigger error:", err);
-      await completeRegistrationWithBackend(`TEST_PASS_${Math.floor(100000 + Math.random() * 900000)}`);
+      setIsSubmitting(false);
+      setPaymentError("Could not open Razorpay checkout modal: " + err.message);
     }
   };
 

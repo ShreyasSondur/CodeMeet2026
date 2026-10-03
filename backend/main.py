@@ -4,14 +4,17 @@ import uuid
 import time
 import secrets
 import random
-from typing import List, Optional, Dict
-from fastapi import FastAPI, HTTPException, Header, Depends, Query
+import hmac
+import hashlib
+from typing import List, Optional, Dict, Any
+from fastapi import FastAPI, HTTPException, Header, Depends, Query, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel, EmailStr
 from dotenv import load_dotenv
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+import razorpay
 
 from database import init_db, save_registration, get_stats, get_registrations, delete_registration
 from email_service import send_admin_otp_email
@@ -20,19 +23,20 @@ load_dotenv()
 
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "idontknow")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", os.getenv("SMTP_EMAIL", "admin@codemeet.com"))
-RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID", "rzp_test_TifQ6oZpnrGXwZ")
-RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "")
+RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID", "rzp_test_TjUjaEkXrem1Yo")
+RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "6Bs9uraea30uFMlFH7NoQt4n")
+
+# Initialize Razorpay client
+razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 
 # In-memory secure state for 2FA OTPs and active admin sessions
-# otp_store = { "otp": "123456", "expires_at": timestamp }
 otp_store: Dict[str, Any] = {}
-# active_sessions = { "token_string": expires_at_timestamp }
 active_sessions: Dict[str, float] = {}
 
 app = FastAPI(
     title="CodeMeet 2026 API",
-    description="Backend API with 2FA OTP Authentication for CodeMeet 2026",
-    version="1.2.0"
+    description="Backend API with Razorpay Standard Checkout & 2FA Admin for CodeMeet 2026",
+    version="1.3.0"
 )
 
 # Initialize database
@@ -72,6 +76,26 @@ class RegistrationRequest(BaseModel):
     payment_id: Optional[str] = ""
     amount_paid: Optional[str] = "1"
 
+class CreateOrderRequest(BaseModel):
+    amount: int  # in paise, min 100 paise
+    currency: Optional[str] = "INR"
+    receipt: Optional[str] = None
+    event_id: Optional[str] = "hackathon"
+    college_name: Optional[str] = ""
+
+class VerifyPaymentRequest(BaseModel):
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str
+    # Optional registration data to persist upon verification
+    event_id: Optional[str] = None
+    event_name: Optional[str] = None
+    team_name: Optional[str] = ""
+    college_name: Optional[str] = None
+    members: Optional[List[MemberSchema]] = None
+    is_solo: Optional[bool] = False
+    amount_paid: Optional[str] = "1"
+
 class RequestOTPRequest(BaseModel):
     password: str
 
@@ -101,7 +125,6 @@ def verify_admin_auth(
         raise HTTPException(status_code=401, detail="Unauthorized: Missing security token")
 
     now = time.time()
-    # Check if token exists and not expired
     if token in active_sessions:
         if active_sessions[token] > now:
             return True
@@ -115,8 +138,8 @@ def verify_admin_auth(
 def read_root():
     return {
         "status": "online",
-        "service": "CodeMeet 2026 Backend API (2FA Protected)",
-        "version": "1.2.0"
+        "service": "CodeMeet 2026 Backend API (Razorpay Standard Checkout + 2FA Protected)",
+        "version": "1.3.0"
     }
 
 @app.get("/api/health")
@@ -124,7 +147,7 @@ def health_check():
     return {
         "status": "healthy",
         "message": "FastAPI backend is running and connected successfully!",
-        "version": "1.2.0"
+        "version": "1.3.0"
     }
 
 @app.get("/api/config/payment")
@@ -137,43 +160,126 @@ def get_payment_config():
         "mode": "test"
     }
 
+# ==========================================
+# STEP 1: BACKEND - CREATE ORDER
+# ==========================================
+@app.post("/api/create-order")
 @app.post("/api/payment/create-order")
-def create_payment_order(data: dict):
-    amount_inr = data.get("amount", 1)
-    amount_paise = int(amount_inr * 100)
+def create_order(data: CreateOrderRequest):
+    amount_paise = data.amount
     
-    if RAZORPAY_KEY_SECRET:
-        try:
-            import requests
-            auth = (RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET)
-            order_data = {
-                "amount": amount_paise,
-                "currency": "INR",
-                "receipt": f"rcpt_{uuid.uuid4().hex[:8]}",
-                "notes": {
-                    "event_id": data.get("event_id", "hackathon"),
-                    "college": data.get("college_name", "")
-                }
-            }
-            res = requests.post("https://api.razorpay.com/v1/orders", auth=auth, json=order_data)
-            if res.status_code == 200:
-                order_json = res.json()
-                return {
-                    "success": True,
-                    "order_id": order_json["id"],
-                    "amount": order_json["amount"],
-                    "currency": order_json["currency"],
-                    "key_id": RAZORPAY_KEY_ID
-                }
-        except Exception as e:
-            print("Razorpay order creation error:", e)
+    # In case amount was passed in Rupees (e.g. 1 instead of 100)
+    if amount_paise < 100 and amount_paise > 0:
+        amount_paise = int(amount_paise * 100)
+
+    # Validate minimum amount: 100 paise (₹1.00)
+    if amount_paise < 100:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Amount must be at least 100 paise (₹1.00)"
+        )
+
+    receipt_id = data.receipt or f"rcpt_{uuid.uuid4().hex[:10]}"
+
+    order_payload = {
+        "amount": amount_paise,
+        "currency": data.currency or "INR",
+        "receipt": receipt_id,
+        "payment_capture": 1,
+        "notes": {
+            "event_id": data.event_id or "hackathon",
+            "college": data.college_name or ""
+        }
+    }
+
+    try:
+        order = razorpay_client.order.create(data=order_payload)
+        return {
+            "success": True,
+            "order_id": order["id"],
+            "amount": order["amount"],
+            "currency": order["currency"],
+            "key_id": RAZORPAY_KEY_ID,
+            "receipt": order.get("receipt", receipt_id)
+        }
+    except razorpay.errors.BadRequestError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except razorpay.errors.ServerError as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Razorpay Server Error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Order creation error: {str(e)}")
+
+# ==========================================
+# STEP 3: BACKEND - VERIFY SIGNATURE
+# ==========================================
+@app.post("/api/verify-payment")
+def verify_payment(data: VerifyPaymentRequest):
+    if not data.razorpay_order_id or not data.razorpay_payment_id or not data.razorpay_signature:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing required payment parameters: order_id, payment_id, and signature are required."
+        )
+
+    # Compute HMAC SHA256 signature
+    msg = f"{data.razorpay_order_id}|{data.razorpay_payment_id}".encode("utf-8")
+    generated_signature = hmac.new(
+        RAZORPAY_KEY_SECRET.encode("utf-8"),
+        msg,
+        hashlib.sha256
+    ).hexdigest()
+
+    # Compare generated signature with razorpay_signature
+    if not secrets.compare_digest(generated_signature, data.razorpay_signature):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Payment signature verification failed. Invalid signature."
+        )
+
+    # Signature is authentic!
+    registration_record = None
+    reg_id = None
+
+    # If registration details were attached with the verification request, persist to DB
+    if data.college_name and data.members and len(data.members) > 0:
+        event_id = data.event_id or "hackathon"
+        event_name = data.event_name or "24H National Hackathon"
+        prefix = "CM26"
+        event_code = {
+            "hackathon": "HACK",
+            "speed-typing": "TYPE",
+            "treasure-hunt": "HUNT",
+            "free-fire": "FIRE"
+        }.get(event_id, "PASS")
+        
+        short_uuid = uuid.uuid4().hex[:6].upper()
+        reg_id = f"{prefix}-{event_code}-{short_uuid}"
+
+        leader = data.members[0]
+        members_data = [m.model_dump() for m in data.members]
+
+        registration_record = save_registration(
+            reg_id=reg_id,
+            event_id=event_id,
+            event_name=event_name,
+            team_name=data.team_name or ("Solo" if data.is_solo else ""),
+            college_name=data.college_name,
+            leader_name=leader.name,
+            leader_email=leader.email,
+            leader_phone=leader.phone,
+            members=members_data,
+            is_solo=bool(data.is_solo),
+            payment_status="PAID",
+            payment_id=data.razorpay_payment_id,
+            amount_paid=data.amount_paid or "1"
+        )
 
     return {
         "success": True,
-        "order_id": None,
-        "amount": amount_paise,
-        "currency": "INR",
-        "key_id": RAZORPAY_KEY_ID
+        "message": "Payment verified and authenticated successfully!",
+        "order_id": data.razorpay_order_id,
+        "payment_id": data.razorpay_payment_id,
+        "registration_id": reg_id,
+        "data": registration_record
     }
 
 @app.post("/api/register")
@@ -184,7 +290,6 @@ def register_participant(data: RegistrationRequest):
     if not data.members or len(data.members) == 0:
         raise HTTPException(status_code=400, detail="At least one participant is required")
 
-    # Generate reference ID
     prefix = "CM26"
     event_code = {
         "hackathon": "HACK",
@@ -230,7 +335,6 @@ def admin_request_otp(data: RequestOTPRequest):
     if data.password.strip() != ADMIN_PASSWORD:
         raise HTTPException(status_code=401, detail="Invalid admin security key. Access denied.")
 
-    # Generate 6-digit OTP
     otp_code = f"{random.randint(100000, 999999)}"
     expires_at = time.time() + 300  # 5 minutes validity
 
@@ -239,7 +343,6 @@ def admin_request_otp(data: RequestOTPRequest):
 
     target_email = os.getenv("ADMIN_EMAIL", os.getenv("SMTP_EMAIL", "admin@codemeet.com")).strip()
 
-    # Send Email
     success, msg = send_admin_otp_email(target_email, otp_code)
 
     return {
@@ -264,10 +367,8 @@ def admin_verify_otp(data: VerifyOTPRequest):
     if data.otp.strip() != stored_otp:
         raise HTTPException(status_code=400, detail="Incorrect OTP verification code. Please try again.")
 
-    # Clear used OTP
     otp_store.clear()
 
-    # Generate secure 12-hour session token
     session_token = f"cm26_sec_{secrets.token_urlsafe(32)}"
     active_sessions[session_token] = time.time() + (12 * 3600)
 
@@ -383,7 +484,6 @@ def admin_export_excel(
         "Registration Timestamp"
     ]
     
-    # Styling
     header_fill = PatternFill(start_color="CCFF00", end_color="CCFF00", fill_type="solid")
     header_font = Font(name="Segoe UI", size=11, bold=True, color="000000")
     thin_border = Border(
@@ -444,7 +544,6 @@ def admin_export_excel(
         
         ws.row_dimensions[r_idx].height = 22
 
-    # Auto-adjust column widths
     for col in ws.columns:
         max_len = max(len(str(cell.value or '')) for cell in col)
         col_letter = openpyxl.utils.get_column_letter(col[0].column)

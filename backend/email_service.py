@@ -12,9 +12,9 @@ def send_admin_otp_email(to_email: str, otp_code: str) -> Tuple[bool, str]:
 
     # Always log OTP to server console for backup / dev debugging
     print(f"\n========================================================")
-    print(f"🔒 [CODEMEET 2026 2FA SECURITY] ADMIN OTP: {otp_code}")
-    print(f"📧 Destination Email: {to_email}")
-    print(f"⏱️ Validity: 5 Minutes")
+    print(f"[CODEMEET 2026 2FA SECURITY] ADMIN OTP: {otp_code}")
+    print(f"Destination Email: {to_email}")
+    print(f"Validity: 5 Minutes")
     print(f"========================================================\n")
 
     if not smtp_email or not smtp_password:
@@ -74,5 +74,5 @@ def send_admin_otp_email(to_email: str, otp_code: str) -> Tuple[bool, str]:
 
         return True, "OTP email dispatched successfully"
     except Exception as e:
-        print(f"❌ Error dispatching OTP email: {e}")
+        print(f"[ERROR] Error dispatching OTP email: {e}")
         return False, f"Failed to send email: {str(e)}"
