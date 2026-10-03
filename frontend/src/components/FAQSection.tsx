@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { soundFX } from "@/lib/audio";
 import {
@@ -307,14 +308,51 @@ export default function FAQSection() {
 
         </div>
 
-        {/* Minimal Clean Payment & Refund Policy Strip */}
-        <div className="py-2.5 px-4 rounded-xl bg-black/40 border border-white/10 flex items-center justify-center text-center gap-2 font-mono text-[11px] text-zinc-300 my-4">
-          <span className="text-amber-400 font-bold">⚠️ POLICY:</span>
-          <span>All payments are final. Once a payment is completed, no refund will be issued.</span>
+        {/* Mandatory Razorpay Compliance Policy Links */}
+        <div className="py-4 px-4 rounded-xl bg-black/60 border border-white/10 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 font-mono text-xs text-zinc-300 my-4">
+          <Link
+            href="/terms"
+            onClick={() => soundFX.playClick()}
+            className="hover:text-[#ccff00] transition-colors"
+          >
+            Terms &amp; Conditions
+          </Link>
+          <span className="text-zinc-600 hidden sm:inline">•</span>
+          <Link
+            href="/privacy"
+            onClick={() => soundFX.playClick()}
+            className="hover:text-[#ccff00] transition-colors"
+          >
+            Privacy Policy
+          </Link>
+          <span className="text-zinc-600 hidden sm:inline">•</span>
+          <Link
+            href="/refund-policy"
+            onClick={() => soundFX.playClick()}
+            className="hover:text-[#ccff00] transition-colors"
+          >
+            Cancellation &amp; Refund Policy
+          </Link>
+          <span className="text-zinc-600 hidden sm:inline">•</span>
+          <Link
+            href="/contact"
+            onClick={() => soundFX.playClick()}
+            className="hover:text-[#ccff00] transition-colors"
+          >
+            Contact Us
+          </Link>
+          <span className="text-zinc-600 hidden sm:inline">•</span>
+          <Link
+            href="/about"
+            onClick={() => soundFX.playClick()}
+            className="hover:text-[#ccff00] transition-colors"
+          >
+            About &amp; Pricing
+          </Link>
         </div>
 
         {/* Bottom Copyright & Return to Top */}
-        <div className="pt-6 pb-4 flex flex-col sm:flex-row items-center justify-between gap-4 font-mono text-xs text-zinc-500 border-t border-white/5">
+        <div className="pt-4 pb-4 flex flex-col sm:flex-row items-center justify-between gap-4 font-mono text-xs text-zinc-500 border-t border-white/5">
           <div>
             © 2026 CODEMEET • Srinivas University (SUIET). All rights reserved.
           </div>
