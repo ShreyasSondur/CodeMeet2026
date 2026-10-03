@@ -332,6 +332,13 @@ SCHEDULE & VENUE
 Date / Time     : {event_date}
 Venue           : {event_venue}
 
+============================================================
+⚠️ MANDATORY ACTION: JOIN OFFICIAL WHATSAPP GROUP
+============================================================
+All team leaders and participants MUST join the official CODEMEET 2026 WhatsApp group to receive critical announcements, problem statement releases, venue seat allocations, and live scoreboards:
+
+👉 Join Group Link: https://chat.whatsapp.com/GkmZhnNE3aIAvvdeyRqECq?s=cl&p=i&mlu=4&ilr=4
+
 {f'''============================================================
 TEAM ROSTER ({len(all_members)} Participants)
 ============================================================
@@ -546,6 +553,42 @@ Organized by Department of CSE & Webflow Student Community
                 </table>
               </td>
             </tr>''' if (not is_solo and len(all_members) > 1) else ''}
+
+            <!-- WhatsApp Updates Mandatory Join Box -->
+            <tr>
+              <td style="padding: 0 28px 24px 28px;">
+                <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #0b1411; border: 2px solid #25D366; border-radius: 14px; overflow: hidden; box-shadow: 0 4px 20px rgba(37,211,102,0.15);">
+                  <tr>
+                    <td style="padding: 20px 22px;">
+                      <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                        <tr>
+                          <td>
+                            <div style="font-size: 11px; font-family: monospace; font-weight: bold; color: #25D366; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 4px;">
+                              // ACTION REQUIRED • MANDATORY GROUP
+                            </div>
+                            <div style="font-size: 16px; font-weight: 900; color: #ffffff; margin-bottom: 8px;">
+                              Join CODEMEET 2026 WhatsApp Community
+                            </div>
+                            <p style="margin: 0 0 16px 0; font-size: 12px; line-height: 18px; color: #d4d4d8;">
+                              <strong style="color: #fbbf24;">⚠️ Critical Notice:</strong> All participants MUST join the official WhatsApp community group. Problem statements, live reporting timings, seat allocations, and scoreboards are shared exclusively here.
+                            </p>
+                            <table border="0" cellpadding="0" cellspacing="0">
+                              <tr>
+                                <td align="center" style="background-color: #25D366; border-radius: 10px;">
+                                  <a href="https://chat.whatsapp.com/GkmZhnNE3aIAvvdeyRqECq?s=cl&p=i&mlu=4&ilr=4" target="_blank" style="display: inline-block; background-color: #25D366; color: #000000; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 13px; font-weight: 900; text-decoration: none; padding: 12px 24px; border-radius: 10px; text-transform: uppercase; letter-spacing: 0.5px;">
+                                    👉 CLICK HERE TO JOIN WHATSAPP GROUP
+                                  </a>
+                                </td>
+                              </tr>
+                            </table>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
 
             <!-- Important Guidelines Box -->
             <tr>

@@ -25,6 +25,14 @@ import {
   CreditCard,
   Lock,
   AlertCircle,
+  MessageSquare,
+  QrCode,
+  AlertTriangle,
+  ExternalLink,
+  Copy,
+  Check,
+  X,
+  Share2,
 } from "lucide-react";
 
 interface EventMeta {
@@ -179,11 +187,24 @@ function RegisterContent() {
   const [agreeToRules, setAgreeToRules] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
   const [confirmedRegId, setConfirmedRegId] = useState<string>("");
   const [confirmedPaymentId, setConfirmedPaymentId] = useState<string>("");
   const [confirmedAmount, setConfirmedAmount] = useState<number>(100);
   const [paymentError, setPaymentError] = useState<string>("");
   const [eventPricings, setEventPricings] = useState<Record<string, { amount_inr: number; amount_paise: number }>>({});
+
+  const WHATSAPP_GROUP_URL = "https://chat.whatsapp.com/GkmZhnNE3aIAvvdeyRqECq?s=cl&p=i&mlu=4&ilr=4";
+
+  const handleCopyWhatsAppLink = () => {
+    soundFX.playClick();
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(WHATSAPP_GROUP_URL);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 3000);
+    }
+  };
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
@@ -289,6 +310,7 @@ function RegisterContent() {
     } finally {
       setIsSubmitting(false);
       setIsSuccess(true);
+      setShowWhatsAppModal(true);
       soundFX.playSuccess();
     }
   };
@@ -437,6 +459,7 @@ function RegisterContent() {
             setConfirmedAmount(effectiveInr);
             setIsSubmitting(false);
             setIsSuccess(true);
+            setShowWhatsAppModal(true);
             soundFX.playSuccess();
           } else {
             const errData = await verifyRes.json().catch(() => ({}));
@@ -689,7 +712,91 @@ function RegisterContent() {
                   </div>
                 </div>
 
-                <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-4">
+                {/* WhatsApp Community Mandatory Join Card */}
+                <div className="p-6 rounded-2xl bg-[#0b1411] border-2 border-[#25D366]/50 shadow-[0_0_35px_rgba(37,211,102,0.15)] text-left space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-[#25D366]/20 border border-[#25D366]/40 flex items-center justify-center text-[#25D366]">
+                        <MessageSquare className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="text-[10px] font-mono uppercase tracking-widest text-[#25D366] font-bold">
+                          // OFFICIAL UPDATES CHANNEL
+                        </div>
+                        <div className="font-[family-name:var(--font-orbitron)] font-bold text-white text-sm">
+                          CODEMEET 2026 WHATSAPP GROUP
+                        </div>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
+                      MANDATORY
+                    </span>
+                  </div>
+
+                  {/* Warning Sign */}
+                  <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <p className="text-[11px] leading-relaxed text-amber-200/90 font-mono">
+                      <strong>CRITICAL NOTICE:</strong> All team leaders &amp; members <strong>MUST</strong> join the official WhatsApp group. Problem statement releases, schedule adjustments, desk allocations, and announcements will be broadcast strictly here.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-center gap-4 pt-1">
+                    <div className="shrink-0 p-2 rounded-xl bg-white shadow-md border border-white/20">
+                      <img
+                        src="/whatsapp_group_qr.png"
+                        alt="CODEMEET 2026 WhatsApp Group QR"
+                        className="w-24 h-24 object-contain"
+                      />
+                    </div>
+                    <div className="space-y-2.5 w-full">
+                      <a
+                        href={WHATSAPP_GROUP_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => soundFX.playClick()}
+                        className="w-full px-5 py-3 rounded-xl bg-[#25D366] hover:bg-[#20ba59] text-black font-[family-name:var(--font-orbitron)] font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(37,211,102,0.4)] cursor-pointer"
+                      >
+                        <MessageSquare className="w-4 h-4 fill-current" />
+                        <span>JOIN WHATSAPP GROUP</span>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleCopyWhatsAppLink}
+                          className="flex-1 px-3 py-2 rounded-lg bg-black/60 hover:bg-black/90 border border-white/10 text-zinc-300 font-mono text-[11px] transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          {copiedLink ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-[#25D366]" />
+                              <span className="text-[#25D366]">Link Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5" />
+                              <span>Copy Group Link</span>
+                            </>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            soundFX.playClick();
+                            setShowWhatsAppModal(true);
+                          }}
+                          className="px-3 py-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-zinc-300 font-mono text-[11px] transition-all flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <QrCode className="w-3.5 h-3.5 text-[#25D366]" />
+                          <span>Enlarge QR</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
                   <button
                     onClick={() => {
                       soundFX.playClick();
@@ -1006,6 +1113,130 @@ function RegisterContent() {
           </span>
         </div>
       </div>
+
+      {/* WHATSAPP MANDATORY GROUP POP-UP MODAL */}
+      {showWhatsAppModal && (
+        <div
+          onClick={() => {
+            soundFX.playClick();
+            setShowWhatsAppModal(false);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-lg bg-[#0a0d14] border-2 border-[#25D366] rounded-3xl p-6 sm:p-8 text-white shadow-[0_0_60px_rgba(37,211,102,0.3)] space-y-5 animate-in zoom-in-95 duration-200 overflow-hidden"
+          >
+            {/* Top Close 'X' Button */}
+            <button
+              onClick={() => {
+                soundFX.playClick();
+                setShowWhatsAppModal(false);
+              }}
+              className="absolute top-5 right-5 p-2 rounded-full bg-zinc-900/80 hover:bg-zinc-800 text-zinc-400 hover:text-white border border-white/10 transition-all cursor-pointer"
+              title="Close modal"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Header Badge */}
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-xl bg-[#25D366]/20 border border-[#25D366]/50 flex items-center justify-center text-[#25D366]">
+                <MessageSquare className="w-5 h-5 fill-current" />
+              </div>
+              <div>
+                <span className="text-[10px] font-mono font-bold tracking-widest text-[#25D366] uppercase block">
+                  // ACTION REQUIRED • MANDATORY STEP
+                </span>
+                <h3 className="font-[family-name:var(--font-orbitron)] font-black text-lg sm:text-xl text-white">
+                  JOIN OFFICIAL WHATSAPP GROUP
+                </h3>
+              </div>
+            </div>
+
+            {/* Warning Box */}
+            <div className="p-4 rounded-2xl bg-amber-500/10 border-2 border-amber-500/40 text-amber-200 flex items-start gap-3.5">
+              <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <div className="font-bold font-mono text-xs uppercase tracking-wider text-amber-300">
+                  ⚠️ ATTENTION PARTICIPANT
+                </div>
+                <p className="text-xs font-mono leading-relaxed text-amber-200/90">
+                  You <strong>MUST</strong> join this WhatsApp group at any cost! All official updates, challenge problem statements, reporting timings at SUIET Mukka, desk allocations, and live scoreboards are shared <strong>ONLY</strong> inside this community.
+                </p>
+              </div>
+            </div>
+
+            {/* QR Code & Scan Instructions */}
+            <div className="p-5 rounded-2xl bg-black/90 border border-white/10 flex flex-col sm:flex-row items-center justify-center gap-5 text-center sm:text-left">
+              <div className="shrink-0 p-3 rounded-2xl bg-white shadow-2xl border-2 border-[#25D366]/40">
+                <img
+                  src="/whatsapp_group_qr.png"
+                  alt="CODEMEET 2026 WhatsApp Group QR Code"
+                  className="w-36 h-36 sm:w-40 sm:h-40 object-contain rounded-lg"
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="text-xs font-mono font-bold text-[#25D366] uppercase tracking-wider">
+                  SCAN WITH WHATSAPP
+                </div>
+                <p className="text-xs text-zinc-300 leading-relaxed font-mono">
+                  Open WhatsApp on your phone &gt; Settings &gt; QR Code icon next to your name &gt; Scan Code.
+                </p>
+                <div className="pt-1 text-[11px] font-mono text-zinc-500">
+                  Official community for all registered teams &amp; solo coders.
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="space-y-3 pt-1">
+              <a
+                href={WHATSAPP_GROUP_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => soundFX.playClick()}
+                className="w-full py-3.5 px-6 rounded-xl bg-[#25D366] hover:bg-[#20ba59] text-black font-[family-name:var(--font-orbitron)] font-black text-sm uppercase tracking-wider transition-all flex items-center justify-center gap-2.5 shadow-[0_0_30px_rgba(37,211,102,0.4)] cursor-pointer"
+              >
+                <MessageSquare className="w-4 h-4 fill-current" />
+                <span>CLICK TO JOIN WHATSAPP GROUP</span>
+                <ExternalLink className="w-4 h-4" />
+              </a>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleCopyWhatsAppLink}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-zinc-300 font-mono text-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {copiedLink ? (
+                    <>
+                      <Check className="w-4 h-4 text-[#25D366]" />
+                      <span className="text-[#25D366] font-bold">Link Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4 text-zinc-400" />
+                      <span>Copy Group Invite Link</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFX.playClick();
+                    setShowWhatsAppModal(false);
+                  }}
+                  className="py-2.5 px-5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white font-mono text-xs font-bold transition-all cursor-pointer"
+                >
+                  I've Joined / Continue
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
