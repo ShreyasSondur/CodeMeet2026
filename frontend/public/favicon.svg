@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%" fill="none">
+  <defs>
+    <filter id="subtle-glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#ffffff" flood-opacity="0.3" />
+    </filter>
+  </defs>
+
+  <g filter="url(#subtle-glow)">
+    <!-- CODEMEET Logo Letter 'C' -->
+    <path
+      d="M 356 142 A 118 118 0 1 0 356 242 L 302 208 A 62 62 0 1 1 302 176 Z"
+      fill="#ffffff"
+    />
+
+    <!-- CODEMEET Logo Chevron 'M' Ribbon -->
+    <path
+      d="M 90 338 L 160 268 L 256 364 L 352 268 L 422 338 L 384 376 L 352 344 L 256 440 L 160 344 L 128 376 Z"
+      fill="#ffffff"
+    />
+  </g>
+</svg>

@@ -1,0 +1,124 @@
+@import "tailwindcss";
+
+:root {
+  --background: #050507;
+  --foreground: #f4f4f5;
+  --neon-lime: #ccff00;
+  --neon-lime-glow: rgba(204, 255, 0, 0.45);
+}
+
+body {
+  background-color: #050507;
+  color: #f4f4f5;
+  overflow-x: hidden;
+  selection-background-color: #ccff00;
+  selection-color: #000000;
+}
+
+::selection {
+  background-color: #ccff00;
+  color: #000000;
+}
+
+/* Custom Cyber Stroke Text */
+.text-stroke-cyber {
+  -webkit-text-stroke: 2px #ffffff;
+  color: transparent;
+  text-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+}
+
+.text-stroke-neon {
+  -webkit-text-stroke: 1.5px #ccff00;
+  color: transparent;
+  text-shadow: 0 0 25px rgba(204, 255, 0, 0.6);
+}
+
+/* Neon Glow Filters */
+.glow-lime {
+  box-shadow: 0 0 25px rgba(204, 255, 0, 0.35), inset 0 0 15px rgba(204, 255, 0, 0.15);
+}
+
+.glow-lime-sm {
+  box-shadow: 0 0 12px rgba(204, 255, 0, 0.3);
+}
+
+.glow-text-lime {
+  text-shadow: 0 0 20px rgba(204, 255, 0, 0.7), 0 0 40px rgba(204, 255, 0, 0.35);
+}
+
+/* Cyber Corner Clip Paths */
+.cyber-box {
+  clip-path: polygon(
+    0 10px,
+    10px 0,
+    calc(100% - 10px) 0,
+    100% 10px,
+    100% calc(100% - 10px),
+    calc(100% - 10px) 100%,
+    10px 100%,
+    0 calc(100% - 10px)
+  );
+}
+
+.cyber-badge {
+  clip-path: polygon(
+    8px 0%,
+    100% 0%,
+    100% calc(100% - 8px),
+    calc(100% - 8px) 100%,
+    0% 100%,
+    0% 8px
+  );
+}
+
+/* Grid overlay background */
+.cyber-grid {
+  background-size: 40px 40px;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+}
+
+.scanline-effect {
+  background: linear-gradient(
+    rgba(18, 16, 16, 0) 50%, 
+    rgba(0, 0, 0, 0.25) 50%
+  ), linear-gradient(
+    90deg,
+    rgba(255, 0, 0, 0.03),
+    rgba(0, 255, 0, 0.01),
+    rgba(0, 0, 255, 0.03)
+  );
+  background-size: 100% 3px, 6px 100%;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #09090b;
+}
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #ccff00;
+}
+
+/* Cyber Button & Pulse Effects */
+@keyframes cyberGlowPulse {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(204, 255, 0, 0.4), inset 0 0 10px rgba(204, 255, 0, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 35px rgba(204, 255, 0, 0.7), 0 0 15px rgba(0, 240, 255, 0.4), inset 0 0 15px rgba(204, 255, 0, 0.4);
+  }
+}
+
+.cyber-btn-pulse {
+  animation: cyberGlowPulse 2.5s infinite ease-in-out;
+}
+
+
