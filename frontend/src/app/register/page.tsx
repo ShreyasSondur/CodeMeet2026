@@ -181,7 +181,29 @@ function RegisterContent() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [confirmedRegId, setConfirmedRegId] = useState<string>("");
   const [confirmedPaymentId, setConfirmedPaymentId] = useState<string>("");
+  const [confirmedAmount, setConfirmedAmount] = useState<number>(100);
   const [paymentError, setPaymentError] = useState<string>("");
+  const [eventPricings, setEventPricings] = useState<Record<string, { amount_inr: number; amount_paise: number }>>({});
+
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
+  // Fetch live pricing from backend API
+  useEffect(() => {
+    const fetchPricing = async () => {
+      try {
+        const res = await fetch(`${apiUrl}/api/events/pricing`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.pricing) {
+            setEventPricings(data.pricing);
+          }
+        }
+      } catch (e) {
+        console.warn("Could not fetch dynamic event pricing from backend:", e);
+      }
+    };
+    fetchPricing();
+  }, [apiUrl]);
 
   useEffect(() => {
     if (eventParam && EVENTS_DATA[eventParam]) {
@@ -190,6 +212,7 @@ function RegisterContent() {
   }, [eventParam]);
 
   const activeEvent = EVENTS_DATA[selectedEventId] || EVENTS_DATA.hackathon;
+  const activeFeeInr = eventPricings[activeEvent.id]?.amount_inr ?? 100;
   const Icon = activeEvent.icon;
 
   const handleSelectEvent = (id: string) => {
@@ -273,15 +296,13 @@ function RegisterContent() {
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
     const defaultRzpKey = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_TjUjaEkXrem1Yo";
 
-    // 1. BACKEND - Call /api/create-order
-    let orderData: { order_id: string; amount: number; currency: string; key_id: string } | null = null;
+    // 1. BACKEND - Call /api/create-order with dynamic event pricing
+    let orderData: { order_id: string; amount: number; amount_inr?: number; currency: string; key_id: string } | null = null;
     try {
       const orderRes = await fetch(`${apiUrl}/api/create-order`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          amount: 100, // 100 paise = ₹1.00 (Test mode)
-          currency: "INR",
           event_id: activeEvent.id,
           college_name: collegeName,
         }),
@@ -306,6 +327,8 @@ function RegisterContent() {
       return;
     }
 
+    const effectiveInr = orderData.amount_inr || (orderData.amount / 100);
+
     // 2. Ensure Razorpay Checkout script is loaded
     const isLoaded = await loadRazorpayScript();
     if (!isLoaded || typeof (window as any).Razorpay === "undefined") {
@@ -326,7 +349,7 @@ function RegisterContent() {
       amount: orderData.amount, // in paise
       currency: orderData.currency || "INR",
       name: "SUIET Mukka • Webflow Community",
-      description: `CODEMEET 2026 - ${activeEvent.title} (Test ₹1.00)`,
+      description: `CODEMEET 2026 - ${activeEvent.title} (₹${effectiveInr})`,
       image: "/favicon.svg",
       order_id: orderData.order_id,
       prefill: {
@@ -358,7 +381,7 @@ function RegisterContent() {
               college_name: collegeName,
               is_solo: activeEvent.isSolo,
               members: memberPayload,
-              amount_paid: "1",
+              amount_paid: String(effectiveInr),
             }),
           });
 
@@ -369,6 +392,7 @@ function RegisterContent() {
                 `CM26-${activeEvent.id.toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`
             );
             setConfirmedPaymentId(response.razorpay_payment_id);
+            setConfirmedAmount(effectiveInr);
             setIsSubmitting(false);
             setIsSuccess(true);
             soundFX.playSuccess();
@@ -554,15 +578,13 @@ function RegisterContent() {
                 <div className="px-4 py-3 rounded-xl bg-black/60 border border-white/10 flex items-center gap-3">
                   <CreditCard className="w-4 h-4 text-[#ccff00]" />
                   <div className="text-xs font-mono">
-                    <div className="text-zinc-500 text-[10px]">ENTRY FEE (TEST)</div>
-                    <div className="text-[#ccff00] font-bold">
-                      {activeEvent.entryFee}
+                    <div className="text-zinc-500 text-[10px]">ENTRY FEE</div>
+                    <div className="text-[#ccff00] font-bold text-sm">
+                      ₹{activeFeeInr} / {activeEvent.isSolo ? "Person" : "Team"}
                     </div>
-                    {activeEvent.feeNote && (
-                      <div className="text-[10px] text-zinc-400 font-normal">
-                        {activeEvent.feeNote}
-                      </div>
-                    )}
+                    <div className="text-[10px] text-zinc-400 font-normal">
+                      Razorpay Instant Checkout
+                    </div>
                   </div>
                 </div>
               </div>
@@ -610,7 +632,7 @@ function RegisterContent() {
                   </div>
                   <div className="flex justify-between border-b border-white/5 pb-2">
                     <span className="text-zinc-500">AMOUNT PAID:</span>
-                    <span className="text-white font-bold">₹1.00 (Test Sandbox)</span>
+                    <span className="text-white font-bold">₹{confirmedAmount}</span>
                   </div>
                   <div className="flex justify-between border-b border-white/5 pb-2">
                     <span className="text-zinc-500">VENUE:</span>
@@ -908,7 +930,7 @@ function RegisterContent() {
                     ) : (
                       <>
                         <CreditCard className="w-4 h-4" />
-                        <span>PAY ₹1 & CONFIRM REGISTRATION</span>
+                        <span>PAY ₹{activeFeeInr} & CONFIRM REGISTRATION</span>
                         <Send className="w-4 h-4" />
                       </>
                     )}

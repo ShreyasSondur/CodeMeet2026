@@ -12,12 +12,28 @@ import {
 
 export default function SecondSection() {
   const [downloadNotice, setDownloadNotice] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const handleDownloadRulebook = () => {
     soundFX.playClick();
     soundFX.playSuccess();
+    setIsDownloading(true);
     setDownloadNotice(true);
-    setTimeout(() => setDownloadNotice(false), 4000);
+
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+    // Trigger download via invisible link
+    const link = document.createElement("a");
+    link.href = `${apiUrl}/api/rulebook/download`;
+    link.setAttribute("download", "CODEMEET_2026_Official_Rulebook.pdf");
+    link.setAttribute("target", "_blank");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    setTimeout(() => {
+      setIsDownloading(false);
+      setTimeout(() => setDownloadNotice(false), 3000);
+    }, 1000);
   };
 
   return (

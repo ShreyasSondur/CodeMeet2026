@@ -1,0 +1,4 @@
+# Ignore uploaded user rulebooks
+rulebook_*.*
+rulebook_meta.json
+!.gitkeep

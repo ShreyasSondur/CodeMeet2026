@@ -35,7 +35,34 @@ def init_db():
             created_at TEXT NOT NULL
         )
     """)
-    conn.commit()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS event_pricing (
+            event_id TEXT PRIMARY KEY,
+            event_name TEXT NOT NULL,
+            amount_inr REAL NOT NULL,
+            amount_paise INTEGER NOT NULL,
+            currency TEXT DEFAULT 'INR',
+            updated_at TEXT NOT NULL
+        )
+    """)
+
+    # Seed default pricing if table is empty
+    cursor.execute("SELECT COUNT(*) as cnt FROM event_pricing")
+    count = cursor.fetchone()["cnt"]
+    if count == 0:
+        default_pricings = [
+            ("hackathon", "24H National Hackathon", 100.0, 10000),
+            ("speed-typing", "Speed Typing Showdown", 100.0, 10000),
+            ("treasure-hunt", "Treasure Hunt Cyber Quest", 200.0, 20000),
+            ("free-fire", "Free Fire Esports Arena", 200.0, 20000),
+        ]
+        now = datetime.utcnow().isoformat() + "Z"
+        for eid, name, inr, paise in default_pricings:
+            cursor.execute(
+                "INSERT INTO event_pricing (event_id, event_name, amount_inr, amount_paise, currency, updated_at) VALUES (?, ?, ?, ?, 'INR', ?)",
+                (eid, name, inr, paise, now)
+            )
 
     # Add columns if they didn't exist in older table
     cursor.execute("PRAGMA table_info(registrations)")
@@ -46,6 +73,81 @@ def init_db():
         cursor.execute("ALTER TABLE registrations ADD COLUMN amount_paid TEXT DEFAULT '1'")
     conn.commit()
     conn.close()
+
+def get_event_pricings() -> Dict[str, Dict[str, Any]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM event_pricing")
+    rows = cursor.fetchall()
+    conn.close()
+
+    result = {}
+    for row in rows:
+        result[row["event_id"]] = {
+            "event_id": row["event_id"],
+            "event_name": row["event_name"],
+            "amount_inr": float(row["amount_inr"]),
+            "amount_paise": int(row["amount_paise"]),
+            "currency": row["currency"],
+            "updated_at": row["updated_at"]
+        }
+    return result
+
+def get_event_pricing(event_id: str) -> Optional[Dict[str, Any]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM event_pricing WHERE event_id = ?", (event_id,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        return {
+            "event_id": row["event_id"],
+            "event_name": row["event_name"],
+            "amount_inr": float(row["amount_inr"]),
+            "amount_paise": int(row["amount_paise"]),
+            "currency": row["currency"],
+            "updated_at": row["updated_at"]
+        }
+    return None
+
+def update_event_pricing(event_id: str, amount_inr: float) -> Dict[str, Any]:
+    # Ensure minimum amount >= ₹1.00 (100 paise)
+    if amount_inr < 1.0:
+        amount_inr = 1.0
+    
+    amount_paise = int(round(amount_inr * 100))
+    now = datetime.utcnow().isoformat() + "Z"
+
+    event_names = {
+        "hackathon": "24H National Hackathon",
+        "speed-typing": "Speed Typing Showdown",
+        "treasure-hunt": "Treasure Hunt Cyber Quest",
+        "free-fire": "Free Fire Esports Arena",
+    }
+    name = event_names.get(event_id, event_id.replace("-", " ").title())
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO event_pricing (event_id, event_name, amount_inr, amount_paise, currency, updated_at)
+        VALUES (?, ?, ?, ?, 'INR', ?)
+        ON CONFLICT(event_id) DO UPDATE SET
+            amount_inr = excluded.amount_inr,
+            amount_paise = excluded.amount_paise,
+            updated_at = excluded.updated_at
+    """, (event_id, name, amount_inr, amount_paise, now))
+    conn.commit()
+    conn.close()
+
+    return {
+        "event_id": event_id,
+        "event_name": name,
+        "amount_inr": amount_inr,
+        "amount_paise": amount_paise,
+        "currency": "INR",
+        "updated_at": now
+    }
 
 def save_registration(
     reg_id: str,

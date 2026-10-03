@@ -7,16 +7,27 @@ import random
 import hmac
 import hashlib
 from typing import List, Optional, Dict, Any
-from fastapi import FastAPI, HTTPException, Header, Depends, Query, status
+from datetime import datetime
+import json
+from fastapi import FastAPI, HTTPException, Header, Depends, Query, status, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from pydantic import BaseModel, EmailStr
 from dotenv import load_dotenv
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 import razorpay
 
-from database import init_db, save_registration, get_stats, get_registrations, delete_registration
+from database import (
+    init_db,
+    save_registration,
+    get_stats,
+    get_registrations,
+    delete_registration,
+    get_event_pricings,
+    get_event_pricing,
+    update_event_pricing
+)
 from email_service import send_admin_otp_email
 
 load_dotenv()
@@ -59,6 +70,34 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# File uploads and rulebook directory configuration
+UPLOADS_DIR = os.path.join(os.path.dirname(__file__), "uploads")
+os.makedirs(UPLOADS_DIR, exist_ok=True)
+RULEBOOK_META_FILE = os.path.join(UPLOADS_DIR, "rulebook_meta.json")
+
+def get_rulebook_meta() -> Dict[str, Any]:
+    if os.path.exists(RULEBOOK_META_FILE):
+        try:
+            with open(RULEBOOK_META_FILE, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+                file_path = os.path.join(UPLOADS_DIR, meta.get("saved_filename", ""))
+                if os.path.exists(file_path):
+                    size = os.path.getsize(file_path)
+                    meta["exists"] = True
+                    meta["size_bytes"] = size
+                    meta["size_formatted"] = f"{size / (1024 * 1024):.2f} MB" if size >= 1024*1024 else f"{size / 1024:.1f} KB"
+                    return meta
+        except Exception:
+            pass
+    return {
+        "exists": False,
+        "filename": "CODEMEET_2026_Official_Rulebook.pdf",
+        "size_bytes": 0,
+        "size_formatted": "0 KB",
+        "updated_at": None,
+        "is_default": True
+    }
+
 # Pydantic Schemas
 class MemberSchema(BaseModel):
     name: str
@@ -77,11 +116,15 @@ class RegistrationRequest(BaseModel):
     amount_paid: Optional[str] = "1"
 
 class CreateOrderRequest(BaseModel):
-    amount: int  # in paise, min 100 paise
+    amount: Optional[int] = None  # in paise, if not provided will fetch from dynamic event pricing
     currency: Optional[str] = "INR"
     receipt: Optional[str] = None
     event_id: Optional[str] = "hackathon"
     college_name: Optional[str] = ""
+
+class UpdateEventPricingRequest(BaseModel):
+    event_id: str
+    amount_inr: float
 
 class VerifyPaymentRequest(BaseModel):
     razorpay_order_id: str
@@ -150,29 +193,173 @@ def health_check():
         "version": "1.3.0"
     }
 
+# ==========================================
+# EVENT PRICING ENDPOINTS
+# ==========================================
+@app.get("/api/events/pricing")
+def get_all_event_pricings():
+    """Public endpoint to fetch current live pricing for all events"""
+    pricings = get_event_pricings()
+    return {
+        "success": True,
+        "pricing": pricings
+    }
+
+@app.put("/api/admin/events/pricing")
+def admin_update_pricing(
+    data: UpdateEventPricingRequest,
+    authorized: bool = Depends(verify_admin_auth)
+):
+    """Admin endpoint to update event entry fee dynamically (Protected by 2FA)"""
+    if data.amount_inr < 1.0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Entry fee cannot be less than ₹1.00"
+        )
+    
+    updated = update_event_pricing(data.event_id, data.amount_inr)
+    return {
+        "success": True,
+        "message": f"Entry fee for {updated['event_name']} updated to ₹{updated['amount_inr']:.2f}",
+        "pricing": updated
+    }
+
+# ==========================================
+# RULEBOOK MANAGEMENT ENDPOINTS
+# ==========================================
+@app.get("/api/rulebook/info")
+def get_rulebook_information():
+    """Returns metadata about the active rulebook file"""
+    return get_rulebook_meta()
+
+@app.get("/api/rulebook")
+@app.get("/api/rulebook/download")
+def download_rulebook_file():
+    """Streams the official rulebook PDF file to the browser"""
+    meta = get_rulebook_meta()
+    if meta.get("exists") and meta.get("saved_filename"):
+        file_path = os.path.join(UPLOADS_DIR, meta["saved_filename"])
+        if os.path.exists(file_path):
+            filename = meta.get("filename", "CODEMEET_2026_Official_Rulebook.pdf")
+            media_type = "application/pdf" if filename.lower().endswith(".pdf") else "application/octet-stream"
+            return FileResponse(
+                path=file_path,
+                filename=filename,
+                media_type=media_type
+            )
+
+    # Fallback to default starter rulebook
+    default_path = os.path.join(UPLOADS_DIR, "CODEMEET_2026_Official_Rulebook.pdf")
+    if not os.path.exists(default_path):
+        with open(default_path, "wb") as f:
+            f.write(b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj 3 0 obj<</Type/Page/MediaBox[0 0 612 792]/Parent 2 0 R/Resources<<>>>>endobj\nxref\n0 4\n0000000000 65535 f\n0000000010 00000 n\n0000000053 00000 n\n0000000102 00000 n\ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n178\n%%EOF")
+
+    return FileResponse(
+        path=default_path,
+        filename="CODEMEET_2026_Official_Rulebook.pdf",
+        media_type="application/pdf"
+    )
+
+@app.post("/api/admin/rulebook/upload")
+async def admin_upload_rulebook(
+    file: UploadFile = File(...),
+    authorized: bool = Depends(verify_admin_auth)
+):
+    """Admin endpoint to upload a new rulebook (PDF/DOC/DOCX) - Protected by 2FA"""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file uploaded.")
+
+    allowed_exts = [".pdf", ".docx", ".doc", ".zip"]
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in allowed_exts:
+        raise HTTPException(status_code=400, detail="Invalid file type. Only PDF, DOC, DOCX files are allowed.")
+
+    content = await file.read()
+    if len(content) > 30 * 1024 * 1024:  # 30 MB max
+        raise HTTPException(status_code=400, detail="File too large. Maximum allowed size is 30 MB.")
+
+    saved_filename = f"rulebook_{int(time.time())}{ext}"
+    target_path = os.path.join(UPLOADS_DIR, saved_filename)
+
+    # Clean up any previous uploads
+    for f in os.listdir(UPLOADS_DIR):
+        if f.startswith("rulebook_"):
+            try:
+                os.remove(os.path.join(UPLOADS_DIR, f))
+            except Exception:
+                pass
+
+    with open(target_path, "wb") as f:
+        f.write(content)
+
+    meta = {
+        "exists": True,
+        "filename": file.filename,
+        "saved_filename": saved_filename,
+        "size_bytes": len(content),
+        "size_formatted": f"{len(content) / (1024 * 1024):.2f} MB" if len(content) >= 1024*1024 else f"{len(content) / 1024:.1f} KB",
+        "updated_at": datetime.utcnow().isoformat() + "Z",
+        "is_default": False
+    }
+
+    with open(RULEBOOK_META_FILE, "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2)
+
+    return {
+        "success": True,
+        "message": f"Rulebook '{file.filename}' uploaded and published successfully!",
+        "meta": meta
+    }
+
+@app.delete("/api/admin/rulebook")
+def admin_delete_rulebook(
+    authorized: bool = Depends(verify_admin_auth)
+):
+    """Admin endpoint to delete current custom rulebook - Protected by 2FA"""
+    if os.path.exists(RULEBOOK_META_FILE):
+        try:
+            with open(RULEBOOK_META_FILE, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+                file_path = os.path.join(UPLOADS_DIR, meta.get("saved_filename", ""))
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+            os.remove(RULEBOOK_META_FILE)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error deleting rulebook file: {str(e)}")
+
+    return {
+        "success": True,
+        "message": "Custom rulebook deleted. Reverted to default rulebook.",
+        "meta": get_rulebook_meta()
+    }
+
 @app.get("/api/config/payment")
 def get_payment_config():
     return {
         "key_id": RAZORPAY_KEY_ID,
-        "amount_inr": 1,
-        "amount_paise": 100,
+        "pricing": get_event_pricings(),
         "currency": "INR",
         "mode": "test"
     }
 
 # ==========================================
-# STEP 1: BACKEND - CREATE ORDER
+# STEP 1: BACKEND - CREATE ORDER (DYNAMIC PRICING)
 # ==========================================
 @app.post("/api/create-order")
 @app.post("/api/payment/create-order")
 def create_order(data: CreateOrderRequest):
-    amount_paise = data.amount
-    
-    # In case amount was passed in Rupees (e.g. 1 instead of 100)
-    if amount_paise < 100 and amount_paise > 0:
-        amount_paise = int(amount_paise * 100)
+    event_id = data.event_id or "hackathon"
+    pricing = get_event_pricing(event_id)
 
-    # Validate minimum amount: 100 paise (₹1.00)
+    # Resolve amount in paise dynamically from admin-configured pricing if not explicitly specified
+    if data.amount and data.amount >= 100:
+        amount_paise = data.amount
+    elif pricing:
+        amount_paise = pricing["amount_paise"]
+    else:
+        amount_paise = 10000  # Default ₹100.00
+
+    # Minimum amount validation: 100 paise (₹1.00)
     if amount_paise < 100:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -187,8 +374,9 @@ def create_order(data: CreateOrderRequest):
         "receipt": receipt_id,
         "payment_capture": 1,
         "notes": {
-            "event_id": data.event_id or "hackathon",
-            "college": data.college_name or ""
+            "event_id": event_id,
+            "college": data.college_name or "",
+            "amount_inr": amount_paise / 100
         }
     }
 
@@ -198,6 +386,7 @@ def create_order(data: CreateOrderRequest):
             "success": True,
             "order_id": order["id"],
             "amount": order["amount"],
+            "amount_inr": order["amount"] / 100,
             "currency": order["currency"],
             "key_id": RAZORPAY_KEY_ID,
             "receipt": order.get("receipt", receipt_id)
@@ -256,6 +445,8 @@ def verify_payment(data: VerifyPaymentRequest):
 
         leader = data.members[0]
         members_data = [m.model_dump() for m in data.members]
+        pricing = get_event_pricing(event_id)
+        effective_amount = data.amount_paid if (data.amount_paid and data.amount_paid != "1") else (str(int(pricing["amount_inr"])) if pricing else (data.amount_paid or "100"))
 
         registration_record = save_registration(
             reg_id=reg_id,
@@ -270,7 +461,7 @@ def verify_payment(data: VerifyPaymentRequest):
             is_solo=bool(data.is_solo),
             payment_status="PAID",
             payment_id=data.razorpay_payment_id,
-            amount_paid=data.amount_paid or "1"
+            amount_paid=effective_amount
         )
 
     return {
