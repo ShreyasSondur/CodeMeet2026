@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { soundFX } from "@/lib/audio";
 import {
@@ -34,6 +34,8 @@ import {
   ChevronDown,
   ChevronUp,
   FileSpreadsheet,
+  Send,
+  Timer,
 } from "lucide-react";
 
 interface Member {
@@ -111,10 +113,14 @@ const EVENT_CONFIGS: Record<string, { name: string; tag: string; color: string; 
 };
 
 export default function AdminPage() {
+  // 2FA Flow States: 'password' | 'otp' | 'authenticated'
+  const [authStep, setAuthStep] = useState<"password" | "otp" | "authenticated">("password");
   const [password, setPassword] = useState("");
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [maskedEmail, setMaskedEmail] = useState("");
   const [authError, setAuthError] = useState("");
   const [isLoadingAuth, setIsLoadingAuth] = useState(false);
+  const [countdown, setCountdown] = useState(300);
 
   const [stats, setStats] = useState<StatsData>({
     total: 0,
@@ -147,50 +153,91 @@ export default function AdminPage() {
 
   // Check saved session on mount
   useEffect(() => {
-    const savedToken = sessionStorage.getItem("codemeet_admin_token");
-    if (savedToken === "idontknow" || savedToken === process.env.NEXT_PUBLIC_ADMIN_PASSWORD) {
-      setIsAuthenticated(true);
-      fetchStats();
-      fetchRegistrations("all");
+    const savedToken = sessionStorage.getItem("codemeet_admin_session_token");
+    if (savedToken && savedToken.startsWith("cm26_sec_")) {
+      setAuthStep("authenticated");
+      fetchStats(savedToken);
+      fetchRegistrations("all", savedToken);
     }
   }, []);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  // OTP Countdown timer
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (authStep === "otp" && countdown > 0) {
+      timer = setInterval(() => setCountdown((c) => c - 1), 1000);
+    }
+    return () => clearInterval(timer);
+  }, [authStep, countdown]);
+
+  const getAuthHeaders = (overrideToken?: string) => ({
+    "Content-Type": "application/json",
+    "x-admin-token": overrideToken || sessionStorage.getItem("codemeet_admin_session_token") || "",
+  });
+
+  // Step 1: Request OTP
+  const handleRequestOTP = async (e: React.FormEvent) => {
     e.preventDefault();
     soundFX.playClick();
     setAuthError("");
     setIsLoadingAuth(true);
 
-    const inputClean = password.trim().toLowerCase();
-
     try {
-      const res = await fetch(`${apiUrl}/api/admin/login`, {
+      const res = await fetch(`${apiUrl}/api/admin/request-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: inputClean }),
+        body: JSON.stringify({ password: password.trim() }),
       });
 
-      if (res.ok || inputClean === "idontknow") {
-        sessionStorage.setItem("codemeet_admin_token", inputClean);
-        setIsAuthenticated(true);
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setMaskedEmail(data.masked_email || "your registered admin email");
+        setAuthStep("otp");
+        setCountdown(300);
         soundFX.playSuccess();
-        fetchStats();
-        fetchRegistrations("all");
       } else {
-        setAuthError("Access Denied: Invalid Security Key / Password");
+        setAuthError(data.detail || "Access Denied: Invalid Security Key");
         soundFX.playClick();
       }
     } catch (err) {
-      // Offline fallback if FastAPI is on matching password
-      if (inputClean === "idontknow") {
-        sessionStorage.setItem("codemeet_admin_token", inputClean);
-        setIsAuthenticated(true);
+      setAuthError("Failed to connect to backend authentication server. Make sure backend is running on port 8000.");
+    } finally {
+      setIsLoadingAuth(false);
+    }
+  };
+
+  // Step 2: Verify 6-digit OTP
+  const handleVerifyOTP = async (e: React.FormEvent) => {
+    e.preventDefault();
+    soundFX.playClick();
+    setAuthError("");
+    setIsLoadingAuth(true);
+
+    try {
+      const res = await fetch(`${apiUrl}/api/admin/verify-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          password: password.trim(),
+          otp: otpCode.trim(),
+        }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.token) {
+        sessionStorage.setItem("codemeet_admin_session_token", data.token);
+        setAuthStep("authenticated");
         soundFX.playSuccess();
-        fetchStats();
-        fetchRegistrations("all");
+        fetchStats(data.token);
+        fetchRegistrations("all", data.token);
       } else {
-        setAuthError("Invalid Security Key");
+        setAuthError(data.detail || "Invalid or Expired OTP code. Please retry.");
+        soundFX.playClick();
       }
+    } catch (err) {
+      setAuthError("Error verifying OTP with security server.");
     } finally {
       setIsLoadingAuth(false);
     }
@@ -198,20 +245,16 @@ export default function AdminPage() {
 
   const handleLogout = () => {
     soundFX.playClick();
-    sessionStorage.removeItem("codemeet_admin_token");
-    setIsAuthenticated(false);
+    sessionStorage.removeItem("codemeet_admin_session_token");
+    setAuthStep("password");
     setPassword("");
+    setOtpCode("");
   };
 
-  const getAuthHeaders = () => ({
-    "Content-Type": "application/json",
-    "x-admin-password": sessionStorage.getItem("codemeet_admin_token") || "idontknow",
-  });
-
-  const fetchStats = async () => {
+  const fetchStats = async (tokenOverride?: string) => {
     try {
       const res = await fetch(`${apiUrl}/api/admin/stats`, {
-        headers: getAuthHeaders(),
+        headers: getAuthHeaders(tokenOverride),
       });
       if (res.ok) {
         const data = await res.json();
@@ -222,7 +265,7 @@ export default function AdminPage() {
     }
   };
 
-  const fetchRegistrations = async (eventId?: string) => {
+  const fetchRegistrations = async (eventId?: string, tokenOverride?: string) => {
     setIsLoadingData(true);
     const targetEvent = eventId !== undefined ? eventId : selectedEvent;
     try {
@@ -231,7 +274,7 @@ export default function AdminPage() {
           ? `${apiUrl}/api/admin/registrations?event_id=${targetEvent}`
           : `${apiUrl}/api/admin/registrations`;
 
-      const res = await fetch(url, { headers: getAuthHeaders() });
+      const res = await fetch(url, { headers: getAuthHeaders(tokenOverride) });
       if (res.ok) {
         const data = await res.json();
         setRegistrations(data.registrations || []);
@@ -251,12 +294,11 @@ export default function AdminPage() {
 
   const handleExportExcel = () => {
     soundFX.playClick();
-    const token = sessionStorage.getItem("codemeet_admin_token") || "idontknow";
+    const token = sessionStorage.getItem("codemeet_admin_session_token") || "";
     const eventParam = selectedEvent !== "all" ? `?event_id=${selectedEvent}` : "";
     
-    // Direct fetch with download
     fetch(`${apiUrl}/api/admin/export/excel${eventParam}`, {
-      headers: { "x-admin-password": token },
+      headers: { "x-admin-token": token },
     })
       .then((res) => {
         if (!res.ok) throw new Error("Export failed");
@@ -324,6 +366,8 @@ export default function AdminPage() {
       college_name: newCollegeName,
       is_solo: isSolo,
       members: validMembers,
+      payment_id: "ADMIN_MANUAL",
+      amount_paid: "1",
     };
 
     try {
@@ -374,81 +418,182 @@ export default function AdminPage() {
         r.leader_name.toLowerCase().includes(q) ||
         r.leader_email.toLowerCase().includes(q) ||
         r.leader_phone.toLowerCase().includes(q) ||
+        (r.payment_id && r.payment_id.toLowerCase().includes(q)) ||
         r.members.some((m) => m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q))
       );
     });
   }, [registrations, searchQuery]);
 
-  // If Not Authenticated -> Show Password Screen
-  if (!isAuthenticated) {
+  // Stage 1 & 2: 2FA Authentication Screens
+  if (authStep === "password" || authStep === "otp") {
     return (
       <div className="min-h-screen w-full bg-[#050507] text-white flex flex-col items-center justify-center p-4 relative overflow-hidden cyber-grid selection:bg-[#ccff00] selection:text-black">
         {/* Glow Blob */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-[#ccff00]/10 rounded-full blur-[140px] pointer-events-none" />
 
-        <div className="relative z-10 w-full max-w-md bg-black/80 border border-white/15 rounded-3xl p-8 shadow-[0_0_50px_rgba(0,0,0,0.9)] backdrop-blur-2xl">
-          <div className="flex flex-col items-center text-center space-y-4 mb-6">
-            <div className="w-16 h-16 rounded-2xl bg-[#ccff00]/15 border border-[#ccff00]/40 flex items-center justify-center text-[#ccff00] shadow-[0_0_25px_rgba(204,255,0,0.3)]">
-              <KeyRound className="w-8 h-8" />
-            </div>
+        <div className="relative z-10 w-full max-w-md bg-black/85 border border-white/15 rounded-3xl p-8 shadow-[0_0_50px_rgba(0,0,0,0.95)] backdrop-blur-2xl">
+          {authStep === "password" ? (
+            /* STEP 1: PASSWORD */
+            <div className="space-y-6">
+              <div className="flex flex-col items-center text-center space-y-3">
+                <div className="w-16 h-16 rounded-2xl bg-[#ccff00]/15 border border-[#ccff00]/40 flex items-center justify-center text-[#ccff00] shadow-[0_0_25px_rgba(204,255,0,0.3)]">
+                  <KeyRound className="w-8 h-8" />
+                </div>
 
-            <div>
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[10px] font-mono text-zinc-400 mb-2">
-                <Terminal className="w-3 h-3 text-[#ccff00]" />
-                <span>RESTRICTED ACCESS PORTAL</span>
+                <div>
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[10px] font-mono text-zinc-400 mb-2">
+                    <Terminal className="w-3 h-3 text-[#ccff00]" />
+                    <span>RESTRICTED ACCESS PORTAL</span>
+                  </div>
+                  <h1 className="font-[family-name:var(--font-orbitron)] font-black text-2xl tracking-tight text-white">
+                    ADMIN <span className="text-[#ccff00]">CONSOLE</span>
+                  </h1>
+                  <p className="text-xs text-zinc-400 font-mono mt-1">
+                    Step 1 of 2: Enter Master Security Key to generate OTP
+                  </p>
+                </div>
               </div>
-              <h1 className="font-[family-name:var(--font-orbitron)] font-black text-2xl tracking-tight text-white">
-                ADMIN <span className="text-[#ccff00]">CONSOLE</span>
-              </h1>
-              <p className="text-xs text-zinc-400 font-mono mt-1">
-                Enter your security authorization key to access registrations.
-              </p>
-            </div>
-          </div>
 
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-[11px] font-mono uppercase text-zinc-300 font-bold mb-1.5 flex items-center gap-1.5">
-                <Lock className="w-3.5 h-3.5 text-[#ccff00]" />
-                <span>Security Key / Password</span>
-              </label>
-              <input
-                type="password"
-                required
-                autoFocus
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter password..."
-                className="w-full px-4 py-3 rounded-xl bg-black/90 border border-white/15 focus:border-[#ccff00] focus:ring-1 focus:ring-[#ccff00] text-sm text-white font-mono placeholder:text-zinc-600 outline-none transition-all tracking-wider"
-              />
-            </div>
+              <form onSubmit={handleRequestOTP} className="space-y-4">
+                <div>
+                  <label className="block text-[11px] font-mono uppercase text-zinc-300 font-bold mb-1.5 flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-[#ccff00]" />
+                    <span>Master Security Key</span>
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    autoFocus
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Enter security key..."
+                    className="w-full px-4 py-3 rounded-xl bg-black/90 border border-white/15 focus:border-[#ccff00] focus:ring-1 focus:ring-[#ccff00] text-sm text-white font-mono placeholder:text-zinc-600 outline-none transition-all tracking-wider"
+                  />
+                </div>
 
-            {authError && (
-              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-mono flex items-center gap-2">
-                <ShieldAlert className="w-4 h-4 shrink-0" />
-                <span>{authError}</span>
+                {authError && (
+                  <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-mono flex items-center gap-2">
+                    <ShieldAlert className="w-4 h-4 shrink-0" />
+                    <span>{authError}</span>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={isLoadingAuth}
+                  onMouseEnter={() => soundFX.playHover()}
+                  className="w-full py-3.5 rounded-xl bg-[#ccff00] hover:bg-[#d9ff33] active:scale-[0.98] text-black font-[family-name:var(--font-orbitron)] font-black text-xs tracking-wider uppercase flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(204,255,0,0.3)] transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {isLoadingAuth ? (
+                    <span className="flex items-center gap-2">
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      GENERATING 2FA OTP...
+                    </span>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>REQUEST 2FA OTP CODE</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            </div>
+          ) : (
+            /* STEP 2: 2FA OTP CODE */
+            <div className="space-y-6 animate-in zoom-in-95 duration-200">
+              <div className="flex flex-col items-center text-center space-y-3">
+                <div className="w-16 h-16 rounded-2xl bg-cyan-500/15 border border-cyan-400/40 flex items-center justify-center text-cyan-400 shadow-[0_0_25px_rgba(0,240,255,0.3)]">
+                  <ShieldCheck className="w-8 h-8" />
+                </div>
+
+                <div>
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-400/30 text-[10px] font-mono text-cyan-300 mb-2">
+                    <Shield className="w-3 h-3 text-cyan-400" />
+                    <span>2FA VERIFICATION CODE SENT</span>
+                  </div>
+                  <h1 className="font-[family-name:var(--font-orbitron)] font-black text-2xl tracking-tight text-white">
+                    ENTER <span className="text-cyan-400">OTP</span>
+                  </h1>
+                  <p className="text-xs text-zinc-400 font-mono mt-1">
+                    6-digit security code sent to <strong className="text-white">{maskedEmail}</strong>
+                  </p>
+                </div>
               </div>
-            )}
 
-            <button
-              type="submit"
-              disabled={isLoadingAuth}
-              onMouseEnter={() => soundFX.playHover()}
-              className="w-full py-3.5 rounded-xl bg-[#ccff00] hover:bg-[#d9ff33] active:scale-[0.98] text-black font-[family-name:var(--font-orbitron)] font-black text-xs tracking-wider uppercase flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(204,255,0,0.3)] transition-all cursor-pointer disabled:opacity-50"
-            >
-              {isLoadingAuth ? (
-                <span className="flex items-center gap-2">
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  AUTHENTICATING...
-                </span>
-              ) : (
-                <>
-                  <Unlock className="w-4 h-4" />
-                  <span>DECRYPT & ENTER</span>
-                </>
-              )}
-            </button>
-          </form>
+              <form onSubmit={handleVerifyOTP} className="space-y-4">
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-[11px] font-mono uppercase text-zinc-300 font-bold">
+                      6-Digit Security OTP
+                    </label>
+                    <div className="flex items-center gap-1 text-[11px] font-mono text-amber-400">
+                      <Timer className="w-3 h-3" />
+                      <span>{Math.floor(countdown / 60)}:{(countdown % 60).toString().padStart(2, "0")}</span>
+                    </div>
+                  </div>
+
+                  <input
+                    type="text"
+                    required
+                    maxLength={6}
+                    autoFocus
+                    value={otpCode}
+                    onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+                    placeholder="• • • • • •"
+                    className="w-full px-4 py-3 rounded-xl bg-black/90 border border-cyan-400/40 focus:border-[#ccff00] focus:ring-1 focus:ring-[#ccff00] text-center text-2xl font-mono tracking-[0.5em] text-[#ccff00] placeholder:text-zinc-700 outline-none transition-all font-black"
+                  />
+                </div>
+
+                {authError && (
+                  <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-mono flex items-center gap-2">
+                    <ShieldAlert className="w-4 h-4 shrink-0" />
+                    <span>{authError}</span>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={isLoadingAuth || otpCode.length < 6}
+                  onMouseEnter={() => soundFX.playHover()}
+                  className="w-full py-3.5 rounded-xl bg-[#ccff00] hover:bg-[#d9ff33] active:scale-[0.98] text-black font-[family-name:var(--font-orbitron)] font-black text-xs tracking-wider uppercase flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(204,255,0,0.3)] transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {isLoadingAuth ? (
+                    <span className="flex items-center gap-2">
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      VERIFYING SECURITY TOKEN...
+                    </span>
+                  ) : (
+                    <>
+                      <Unlock className="w-4 h-4" />
+                      <span>VERIFY & ENTER PORTAL</span>
+                    </>
+                  )}
+                </button>
+
+                <div className="flex items-center justify-between text-xs font-mono pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthStep("password");
+                      setOtpCode("");
+                      setAuthError("");
+                    }}
+                    className="text-zinc-500 hover:text-zinc-300 transition-colors"
+                  >
+                    ← Back to Security Key
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleRequestOTP}
+                    className="text-cyan-400 hover:text-cyan-300 transition-colors"
+                  >
+                    Resend OTP
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
 
           <div className="mt-6 pt-6 border-t border-white/10 flex items-center justify-between text-[11px] font-mono text-zinc-500">
             <Link
@@ -485,8 +630,9 @@ export default function AdminPage() {
                 <h1 className="font-[family-name:var(--font-orbitron)] font-black text-xl sm:text-2xl text-white">
                   CODEMEET <span className="text-[#ccff00]">ADMIN</span>
                 </h1>
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                  LIVE SECURE
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                  2FA SECURE SESSION
                 </span>
               </div>
               <p className="text-xs text-zinc-400 font-mono">
@@ -535,7 +681,7 @@ export default function AdminPage() {
               onMouseEnter={() => soundFX.playHover()}
               className="px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-xs font-mono transition-all cursor-pointer"
             >
-              Logout
+              Logout Session
             </button>
           </div>
         </div>
@@ -684,7 +830,7 @@ export default function AdminPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search team, college, lead, ID..."
+              placeholder="Search team, college, lead, ID, payment..."
               className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-black/60 border border-white/15 focus:border-[#ccff00] focus:ring-1 focus:ring-[#ccff00] text-xs font-mono text-white placeholder:text-zinc-600 outline-none transition-all"
             />
             {searchQuery && (

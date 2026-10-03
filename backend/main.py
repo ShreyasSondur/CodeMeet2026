@@ -1,7 +1,10 @@
 import os
 import io
 import uuid
-from typing import List, Optional
+import time
+import secrets
+import random
+from typing import List, Optional, Dict
 from fastapi import FastAPI, HTTPException, Header, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -11,16 +14,25 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 from database import init_db, save_registration, get_stats, get_registrations, delete_registration
+from email_service import send_admin_otp_email
 
 load_dotenv()
 
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "idontknow")
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", os.getenv("SMTP_EMAIL", "admin@codemeet.com"))
 RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID", "rzp_test_TifQ6oZpnrGXwZ")
+RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "")
+
+# In-memory secure state for 2FA OTPs and active admin sessions
+# otp_store = { "otp": "123456", "expires_at": timestamp }
+otp_store: Dict[str, Any] = {}
+# active_sessions = { "token_string": expires_at_timestamp }
+active_sessions: Dict[str, float] = {}
 
 app = FastAPI(
     title="CodeMeet 2026 API",
-    description="Backend API for CodeMeet 2026 Registrations and Admin Portal",
-    version="1.0.0"
+    description="Backend API with 2FA OTP Authentication for CodeMeet 2026",
+    version="1.2.0"
 )
 
 # Initialize database
@@ -60,20 +72,51 @@ class RegistrationRequest(BaseModel):
     payment_id: Optional[str] = ""
     amount_paid: Optional[str] = "1"
 
-class AdminLoginRequest(BaseModel):
+class RequestOTPRequest(BaseModel):
     password: str
 
-def verify_admin_auth(x_admin_password: Optional[str] = Header(None, alias="x-admin-password")):
-    if not x_admin_password or x_admin_password.strip() != ADMIN_PASSWORD:
-        raise HTTPException(status_code=401, detail="Unauthorized: Invalid admin password")
-    return True
+class VerifyOTPRequest(BaseModel):
+    password: str
+    otp: str
+
+def mask_email(email: str) -> str:
+    if "@" not in email:
+        return "admin email"
+    user, domain = email.split("@", 1)
+    if len(user) <= 2:
+        masked_user = user[0] + "*"
+    else:
+        masked_user = user[0] + "*" * (len(user) - 2) + user[-1]
+    return f"{masked_user}@{domain}"
+
+def verify_admin_auth(
+    x_admin_token: Optional[str] = Header(None, alias="x-admin-token"),
+    authorization: Optional[str] = Header(None)
+):
+    token = x_admin_token
+    if not token and authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1]
+
+    if not token:
+        raise HTTPException(status_code=401, detail="Unauthorized: Missing security token")
+
+    now = time.time()
+    # Check if token exists and not expired
+    if token in active_sessions:
+        if active_sessions[token] > now:
+            return True
+        else:
+            del active_sessions[token]
+            raise HTTPException(status_code=401, detail="Session expired. Please re-authenticate.")
+
+    raise HTTPException(status_code=401, detail="Unauthorized: Invalid security session token")
 
 @app.get("/")
 def read_root():
     return {
         "status": "online",
-        "service": "CodeMeet 2026 Backend API",
-        "version": "1.0.0"
+        "service": "CodeMeet 2026 Backend API (2FA Protected)",
+        "version": "1.2.0"
     }
 
 @app.get("/api/health")
@@ -81,10 +124,8 @@ def health_check():
     return {
         "status": "healthy",
         "message": "FastAPI backend is running and connected successfully!",
-        "version": "1.0.0"
+        "version": "1.2.0"
     }
-
-RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "")
 
 @app.get("/api/config/payment")
 def get_payment_config():
@@ -182,16 +223,59 @@ def register_participant(data: RegistrationRequest):
         "data": reg
     }
 
-# Admin Routes
-@app.post("/api/admin/login")
-def admin_login(data: AdminLoginRequest):
-    if data.password.strip() == ADMIN_PASSWORD:
-        return {
-            "success": True,
-            "message": "Authenticated successfully",
-            "token": ADMIN_PASSWORD
-        }
-    raise HTTPException(status_code=401, detail="Invalid admin password. Access denied.")
+# --- 2FA ADMIN AUTHENTICATION ENDPOINTS ---
+
+@app.post("/api/admin/request-otp")
+def admin_request_otp(data: RequestOTPRequest):
+    if data.password.strip() != ADMIN_PASSWORD:
+        raise HTTPException(status_code=401, detail="Invalid admin security key. Access denied.")
+
+    # Generate 6-digit OTP
+    otp_code = f"{random.randint(100000, 999999)}"
+    expires_at = time.time() + 300  # 5 minutes validity
+
+    otp_store["otp"] = otp_code
+    otp_store["expires_at"] = expires_at
+
+    target_email = os.getenv("ADMIN_EMAIL", os.getenv("SMTP_EMAIL", "admin@codemeet.com")).strip()
+
+    # Send Email
+    success, msg = send_admin_otp_email(target_email, otp_code)
+
+    return {
+        "success": True,
+        "message": "Security verification code dispatched",
+        "masked_email": mask_email(target_email),
+        "expires_in_seconds": 300,
+        "email_status": msg
+    }
+
+@app.post("/api/admin/verify-otp")
+def admin_verify_otp(data: VerifyOTPRequest):
+    if data.password.strip() != ADMIN_PASSWORD:
+        raise HTTPException(status_code=401, detail="Invalid admin security key")
+
+    stored_otp = otp_store.get("otp")
+    expires_at = otp_store.get("expires_at", 0)
+
+    if not stored_otp or time.time() > expires_at:
+        raise HTTPException(status_code=400, detail="OTP has expired. Please request a new code.")
+
+    if data.otp.strip() != stored_otp:
+        raise HTTPException(status_code=400, detail="Incorrect OTP verification code. Please try again.")
+
+    # Clear used OTP
+    otp_store.clear()
+
+    # Generate secure 12-hour session token
+    session_token = f"cm26_sec_{secrets.token_urlsafe(32)}"
+    active_sessions[session_token] = time.time() + (12 * 3600)
+
+    return {
+        "success": True,
+        "message": "2FA Authentication successful. Welcome to Admin Portal.",
+        "token": session_token
+    }
 
 @app.get("/api/admin/stats")
 def admin_stats(_: bool = Depends(verify_admin_auth)):
