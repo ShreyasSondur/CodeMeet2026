@@ -545,9 +545,13 @@ export default function AdminPage() {
   };
 
   const handleAddMemberChange = (idx: number, field: keyof Member, val: string) => {
+    let cleanVal = val;
+    if (field === "phone") {
+      cleanVal = val.replace(/\D/g, "").slice(0, 10);
+    }
     setNewMembers((prev) => {
       const copy = [...prev];
-      copy[idx] = { ...copy[idx], [field]: val };
+      copy[idx] = { ...copy[idx], [field]: cleanVal };
       return copy;
     });
   };
@@ -564,6 +568,16 @@ export default function AdminPage() {
     const validMembers = isSolo
       ? [{ ...newMembers[0], is_leader: true }]
       : newMembers.filter((m) => m.name.trim() !== "");
+
+    // Validate 10-digit phone numbers (numbers only)
+    for (let i = 0; i < validMembers.length; i++) {
+      const m = validMembers[i];
+      if (!/^\d{10}$/.test(m.phone)) {
+        setIsSubmittingNew(false);
+        setAddSuccessMsg(`Participant 0${i + 1} phone number must be exactly 10 digits.`);
+        return;
+      }
+    }
 
     const payload = {
       event_id: newEventId,
@@ -1913,9 +1927,13 @@ export default function AdminPage() {
                           <input
                             type="tel"
                             required={isRequired}
+                            inputMode="numeric"
+                            pattern="[0-9]{10}"
+                            maxLength={10}
+                            minLength={10}
                             value={m.phone}
                             onChange={(e) => handleAddMemberChange(idx, "phone", e.target.value)}
-                            placeholder="Enter phone number"
+                            placeholder="10-digit mobile number"
                             className="px-3 py-2 rounded-lg bg-black/80 border border-white/10 focus:border-[#ccff00] text-xs font-mono text-white placeholder:text-zinc-600 outline-none"
                           />
                         </div>

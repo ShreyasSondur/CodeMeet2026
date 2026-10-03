@@ -226,15 +226,25 @@ function RegisterContent() {
     field: keyof MemberData,
     value: string
   ) => {
+    let cleanVal = value;
+    if (field === "phone") {
+      // Only allow digits and limit to 10 characters
+      cleanVal = value.replace(/\D/g, "").slice(0, 10);
+    }
     setMembers((prev) => {
       const updated = [...prev];
-      updated[index] = { ...updated[index], [field]: value };
+      updated[index] = { ...updated[index], [field]: cleanVal };
       return updated;
     });
   };
 
   const handleSoloChange = (field: keyof MemberData, value: string) => {
-    setSoloParticipant((prev) => ({ ...prev, [field]: value }));
+    let cleanVal = value;
+    if (field === "phone") {
+      // Only allow digits and limit to 10 characters
+      cleanVal = value.replace(/\D/g, "").slice(0, 10);
+    }
+    setSoloParticipant((prev) => ({ ...prev, [field]: cleanVal }));
   };
 
   const completeRegistrationWithBackend = async (paymentId: string) => {
@@ -292,6 +302,38 @@ function RegisterContent() {
     const leaderName = activeEvent.isSolo ? soloParticipant.name : members[0]?.name;
     const leaderEmail = activeEvent.isSolo ? soloParticipant.email : members[0]?.email;
     const leaderPhone = activeEvent.isSolo ? soloParticipant.phone : members[0]?.phone;
+
+    // Strict 10-digit phone number validation (digits only)
+    if (activeEvent.isSolo) {
+      if (!/^\d{10}$/.test(soloParticipant.phone)) {
+        setIsSubmitting(false);
+        setPaymentError("Please enter a valid 10-digit mobile number (numbers only).");
+        return;
+      }
+    } else {
+      const minRequired = activeEvent.id === "hackathon" ? 3 : 4;
+      for (let i = 0; i < members.length; i++) {
+        const m = members[i];
+        const isRequired = i < minRequired;
+        if (isRequired) {
+          if (!/^\d{10}$/.test(m.phone)) {
+            setIsSubmitting(false);
+            setPaymentError(
+              `Please enter a valid 10-digit phone number for Participant 0${i + 1}${
+                i === 0 ? " (Team Leader)" : ""
+              }.`
+            );
+            return;
+          }
+        } else if (m.name.trim() !== "" && !/^\d{10}$/.test(m.phone)) {
+          setIsSubmitting(false);
+          setPaymentError(
+            `Please enter a valid 10-digit phone number for Participant 0${i + 1}.`
+          );
+          return;
+        }
+      }
+    }
 
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
     const defaultRzpKey = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_TjUjaEkXrem1Yo";
@@ -751,14 +793,18 @@ function RegisterContent() {
 
                       <div className="space-y-1.5">
                         <label className="block text-[11px] font-mono text-zinc-400 uppercase font-semibold">
-                          WhatsApp / Phone Number *
+                          WhatsApp / Phone Number (10 Digits) *
                         </label>
                         <input
                           type="tel"
+                          inputMode="numeric"
+                          pattern="[0-9]{10}"
+                          maxLength={10}
+                          minLength={10}
                           required
                           value={soloParticipant.phone}
                           onChange={(e) => handleSoloChange("phone", e.target.value)}
-                          placeholder="Enter phone number"
+                          placeholder="10-digit mobile number (e.g. 9876543210)"
                           className="w-full px-3.5 py-2.5 rounded-lg bg-black/60 border border-white/10 focus:border-[#f59e0b] focus:outline-none text-white text-xs font-mono placeholder:text-zinc-600"
                         />
                       </div>
@@ -865,16 +911,20 @@ function RegisterContent() {
                               {/* Member Phone */}
                               <div className="space-y-1">
                                 <label className="block text-[11px] font-mono text-zinc-400 uppercase">
-                                  Phone Number {isCompulsory && "*"}
+                                  Phone Number (10 Digits) {isCompulsory && "*"}
                                 </label>
                                 <input
                                   type="tel"
+                                  inputMode="numeric"
+                                  pattern="[0-9]{10}"
+                                  maxLength={10}
+                                  minLength={10}
                                   required={isCompulsory}
                                   value={member.phone}
                                   onChange={(e) =>
                                     handleMemberChange(idx, "phone", e.target.value)
                                   }
-                                  placeholder="Enter phone number"
+                                  placeholder="10-digit mobile number"
                                   className="w-full px-3 py-2.5 rounded-lg bg-black/70 border border-white/10 focus:border-[#ccff00] focus:outline-none text-white text-xs font-mono placeholder:text-zinc-600"
                                 />
                               </div>

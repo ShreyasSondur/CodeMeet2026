@@ -1,5 +1,6 @@
 import os
 import io
+import re
 import uuid
 import time
 import secrets
@@ -12,7 +13,7 @@ import json
 from fastapi import FastAPI, HTTPException, Header, Depends, Query, status, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from dotenv import load_dotenv
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -104,6 +105,14 @@ class MemberSchema(BaseModel):
     email: str
     phone: str
     is_leader: Optional[bool] = False
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, v: str) -> str:
+        clean = re.sub(r"\D", "", v or "")
+        if len(clean) != 10:
+            raise ValueError("Phone number must be exactly 10 digits (numbers only)")
+        return clean
 
 class RegistrationRequest(BaseModel):
     event_id: str
