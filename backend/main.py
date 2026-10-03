@@ -659,6 +659,9 @@ def admin_add_registration(data: RegistrationRequest, _: bool = Depends(verify_a
     leader = data.members[0] if data.members else MemberSchema(name="", email="", phone="")
     members_data = [m.model_dump() for m in data.members]
 
+    pricing = get_event_pricing(data.event_id)
+    official_fee = str(int(pricing.get("amount_inr", 100))) if pricing else (data.amount_paid or "100")
+
     reg = save_registration(
         reg_id=reg_id,
         event_id=data.event_id,
@@ -671,11 +674,11 @@ def admin_add_registration(data: RegistrationRequest, _: bool = Depends(verify_a
         members=members_data,
         is_solo=bool(data.is_solo),
         payment_status="VERIFIED",
-        payment_id=data.payment_id or "ADMIN_MANUAL",
-        amount_paid=data.amount_paid or "1"
+        payment_id=data.payment_id or "ADMIN_VERIFIED",
+        amount_paid=official_fee
     )
 
-    # Dispatch personalized confirmation emails to all participants
+    # Dispatch personalized confirmation emails to all participants (leader + all team members)
     send_registration_confirmation_emails(
         reg_id=reg_id,
         event_id=data.event_id,
@@ -684,13 +687,13 @@ def admin_add_registration(data: RegistrationRequest, _: bool = Depends(verify_a
         college_name=data.college_name,
         members=members_data,
         is_solo=bool(data.is_solo),
-        amount_paid=data.amount_paid or "1",
-        payment_id=data.payment_id or "ADMIN_MANUAL"
+        amount_paid=official_fee,
+        payment_id=data.payment_id or "ADMIN_VERIFIED"
     )
 
     return {
         "success": True,
-        "message": "Participant / Team added successfully by Admin",
+        "message": f"Participant / Team added successfully by Admin. Confirmation emails dispatched to all {len(members_data)} participant(s).",
         "registration": reg
     }
 

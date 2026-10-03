@@ -659,7 +659,7 @@ export default function AdminPage() {
 
       if (res.ok) {
         soundFX.playSuccess();
-        setAddSuccessMsg("Registration successfully created!");
+        setAddSuccessMsg("Registration successfully created! Confirmation emails sent to all team members.");
         setTimeout(() => {
           setIsAddModalOpen(false);
           setAddSuccessMsg("");
