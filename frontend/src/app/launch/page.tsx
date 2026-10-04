@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import confetti from "canvas-confetti";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -24,6 +25,7 @@ import LaunchQuantumCanvas, { LaunchPhase } from "@/components/LaunchQuantumCanv
 import HeroSection from "@/components/HeroSection";
 
 export default function LaunchPage() {
+  const router = useRouter();
   const [phase, setPhase] = useState<LaunchPhase>("idle");
   const [countdown, setCountdown] = useState<number>(5);
   const [activeMessage, setActiveMessage] = useState<string>("");
@@ -31,6 +33,25 @@ export default function LaunchPage() {
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [showWebsite, setShowWebsite] = useState(false);
   const [isWarpingFlash, setIsWarpingFlash] = useState(false);
+  const timeoutsRef = useRef<NodeJS.Timeout[]>([]);
+
+  const addTimeout = (fn: () => void, delay: number) => {
+    const timer = setTimeout(fn, delay);
+    timeoutsRef.current.push(timer);
+    return timer;
+  };
+
+  const clearAllTimeouts = () => {
+    timeoutsRef.current.forEach((t) => clearTimeout(t));
+    timeoutsRef.current = [];
+  };
+
+  // Clean up any pending timeouts on unmount
+  useEffect(() => {
+    return () => {
+      clearAllTimeouts();
+    };
+  }, []);
 
   // Subscribe to audio state
   useEffect(() => {
@@ -104,49 +125,56 @@ export default function LaunchPage() {
 
   // Main Launch Execution Sequence
   const startLaunchSequence = () => {
+    clearAllTimeouts();
     soundFX.playClick();
     soundFX.startBGM();
     soundFX.playLaunchRiser();
 
+    // Screen 1: Srinivas Institute of Engineering and Technology
     setPhase("intro");
-    setActiveMessage("INITIALIZING INAUGURATION PROTOCOL...");
+    setActiveMessage("SRINIVAS INSTITUTE OF ENGINEERING & TECHNOLOGY");
 
-    // Step 1: Professional College / Hackathon Inauguration Message
-    setTimeout(() => {
-      setActiveMessage("SRINIVAS UNIVERSITY PRESENTS CODEMEET 2026");
-    }, 2400);
+    // Screen 2: In Collaboration With
+    addTimeout(() => {
+      setActiveMessage("IN COLLABORATION WITH");
+    }, 1700);
 
-    // Step 2: "THE OFFICIAL WEBSITE LAUNCHES IN..."
-    setTimeout(() => {
+    // Screen 3: Webflow Community
+    addTimeout(() => {
+      setActiveMessage("WEBFLOW COMMUNITY");
+    }, 3100);
+
+    // Screen 4: Countdown starts with "THE OFFICIAL WEBSITE LAUNCHES IN"
+    addTimeout(() => {
       setActiveMessage("THE OFFICIAL WEBSITE LAUNCHES IN");
       setPhase("countdown");
       setCountdown(5);
       soundFX.playLaunchCountdown(5);
-    }, 5400);
+    }, 4500);
 
-    // Step 3: Countdown sequence (5, 4, 3, 2, 1) - spaced by 1600ms for stage readability
-    setTimeout(() => {
+    // Countdown sequence (5, 4, 3, 2, 1) - faster paced (1.3s per step)
+    addTimeout(() => {
       setCountdown(4);
       soundFX.playLaunchCountdown(4);
-    }, 7000);
+    }, 5800);
 
-    setTimeout(() => {
+    addTimeout(() => {
       setCountdown(3);
       soundFX.playLaunchCountdown(3);
-    }, 8600);
+    }, 7100);
 
-    setTimeout(() => {
+    addTimeout(() => {
       setCountdown(2);
       soundFX.playLaunchCountdown(2);
-    }, 10200);
+    }, 8400);
 
-    setTimeout(() => {
+    addTimeout(() => {
       setCountdown(1);
       soundFX.playLaunchCountdown(1);
-    }, 11800);
+    }, 9700);
 
-    // Step 4: Ignition Moment (0 / NOW LIVE!)
-    setTimeout(() => {
+    // Ignition Moment (0 / NOW LIVE!)
+    addTimeout(() => {
       setCountdown(0);
       setPhase("ignite");
       setIsWarpingFlash(true);
@@ -155,20 +183,26 @@ export default function LaunchPage() {
       fireLaunchConfetti();
 
       // Flash fade out
-      setTimeout(() => {
+      addTimeout(() => {
         setIsWarpingFlash(false);
-      }, 800);
+      }, 700);
 
-      // Step 5: Transition into live synchronized Hero / Website
-      setTimeout(() => {
+      // Transition into live synchronized Hero / Website
+      addTimeout(() => {
         setPhase("live");
         setShowWebsite(true);
-      }, 4000);
-    }, 13400);
+
+        // Auto re-navigate to the home page after 5 seconds delay
+        addTimeout(() => {
+          router.push("/");
+        }, 5000);
+      }, 2800);
+    }, 11000);
   };
 
   // Reset sequence (for presenters to re-launch if needed)
   const resetLaunch = () => {
+    clearAllTimeouts();
     soundFX.playClick();
     setPhase("idle");
     setCountdown(5);
@@ -358,16 +392,27 @@ export default function LaunchPage() {
                     <span>// INAUGURATION CEREMONY COMMENCED</span>
                   </div>
 
-                  <h2 className="font-[family-name:var(--font-orbitron)] font-black text-3xl sm:text-5xl md:text-6xl text-white tracking-wide leading-tight drop-shadow-[0_0_30px_rgba(204,255,0,0.5)] max-w-3xl">
-                    {activeMessage}
-                  </h2>
+                  <div className="min-h-[140px] flex items-center justify-center">
+                    <AnimatePresence mode="wait">
+                      <motion.h2
+                        key={activeMessage}
+                        initial={{ opacity: 0, y: 15, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -15, scale: 1.05 }}
+                        transition={{ duration: 0.35, ease: "easeOut" }}
+                        className="font-[family-name:var(--font-orbitron)] font-black text-2xl sm:text-4xl md:text-5xl text-white tracking-wide leading-tight drop-shadow-[0_0_30px_rgba(204,255,0,0.5)] max-w-4xl px-4"
+                      >
+                        {activeMessage}
+                      </motion.h2>
+                    </AnimatePresence>
+                  </div>
 
                   <div className="w-64 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
                     <motion.div
                       className="h-full bg-gradient-to-r from-[#ccff00] to-[#00f0ff]"
                       initial={{ width: "0%" }}
                       animate={{ width: "100%" }}
-                      transition={{ duration: 2.8, ease: "easeInOut" }}
+                      transition={{ duration: 4.5, ease: "easeInOut" }}
                     />
                   </div>
                 </motion.div>
