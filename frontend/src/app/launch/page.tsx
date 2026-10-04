@@ -179,44 +179,34 @@ export default function LaunchPage() {
       });
     }, 4200);
 
-    // Slide 5: PRESENTS
-    addTimeout(() => {
-      setIntroSlide({
-        tag: "// INAUGURATION CEREMONY",
-        title: "PRESENTS",
-        subtitle: "CODEMEET 2026 • NATIONAL LEVEL 24-HOUR HACKATHON",
-        highlight: true,
-      });
-    }, 5500);
-
-    // Slide 6: Countdown starts with "THE OFFICIAL WEBSITE LAUNCHES IN"
+    // Countdown starts with "THE OFFICIAL WEBSITE LAUNCHES IN"
     addTimeout(() => {
       setActiveMessage("THE OFFICIAL WEBSITE LAUNCHES IN");
       setPhase("countdown");
       setCountdown(5);
       soundFX.playLaunchCountdown(5);
-    }, 6900);
+    }, 5600);
 
     // Countdown sequence (5, 4, 3, 2, 1) - paced at 1.3s per step
     addTimeout(() => {
       setCountdown(4);
       soundFX.playLaunchCountdown(4);
-    }, 8200);
+    }, 6900);
 
     addTimeout(() => {
       setCountdown(3);
       soundFX.playLaunchCountdown(3);
-    }, 9500);
+    }, 8200);
 
     addTimeout(() => {
       setCountdown(2);
       soundFX.playLaunchCountdown(2);
-    }, 10800);
+    }, 9500);
 
     addTimeout(() => {
       setCountdown(1);
       soundFX.playLaunchCountdown(1);
-    }, 12100);
+    }, 10800);
 
     // Ignition Moment (0 / NOW LIVE!)
     addTimeout(() => {
@@ -242,7 +232,7 @@ export default function LaunchPage() {
           router.push("/");
         }, 5000);
       }, 2800);
-    }, 13400);
+    }, 12100);
   };
 
   // Reset sequence (for presenters to re-launch if needed)
@@ -472,7 +462,7 @@ export default function LaunchPage() {
                       className="h-full bg-gradient-to-r from-[#ccff00] via-[#00f0ff] to-[#ccff00]"
                       initial={{ width: "0%" }}
                       animate={{ width: "100%" }}
-                      transition={{ duration: 6.8, ease: "easeInOut" }}
+                      transition={{ duration: 5.6, ease: "easeInOut" }}
                     />
                   </div>
                 </motion.div>
