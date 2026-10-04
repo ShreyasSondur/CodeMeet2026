@@ -24,11 +24,25 @@ import { soundFX } from "@/lib/audio";
 import LaunchQuantumCanvas, { LaunchPhase } from "@/components/LaunchQuantumCanvas";
 import HeroSection from "@/components/HeroSection";
 
+interface IntroSlide {
+  tag: string;
+  title: string;
+  subtitle?: string;
+  highlight?: boolean;
+}
+
+const INITIAL_SLIDE: IntroSlide = {
+  tag: "// CEREMONY INITIALIZATION",
+  title: "INITIALIZING CEREMONY PROTOCOL...",
+  subtitle: "AUTHENTICATING STAGE CONTROL & SECURE NETWORK",
+};
+
 export default function LaunchPage() {
   const router = useRouter();
   const [phase, setPhase] = useState<LaunchPhase>("idle");
   const [countdown, setCountdown] = useState<number>(5);
   const [activeMessage, setActiveMessage] = useState<string>("");
+  const [introSlide, setIntroSlide] = useState<IntroSlide>(INITIAL_SLIDE);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [showWebsite, setShowWebsite] = useState(false);
@@ -130,48 +144,79 @@ export default function LaunchPage() {
     soundFX.startBGM();
     soundFX.playLaunchRiser();
 
-    // Screen 1: Srinivas Institute of Engineering and Technology
+    // Slide 1: Initializing Ceremony Protocol
     setPhase("intro");
-    setActiveMessage("SRINIVAS INSTITUTE OF ENGINEERING & TECHNOLOGY");
+    setIntroSlide({
+      tag: "// CEREMONY INITIALIZATION",
+      title: "INITIALIZING CEREMONY PROTOCOL...",
+      subtitle: "AUTHENTICATING STAGE CONTROL & SECURE CAMPUS NETWORK",
+    });
 
-    // Screen 2: In Collaboration With
+    // Slide 2: Srinivas Institute of Engineering and Technology
     addTimeout(() => {
-      setActiveMessage("IN COLLABORATION WITH");
-    }, 1700);
+      setIntroSlide({
+        tag: "// HOST INSTITUTION",
+        title: "SRINIVAS INSTITUTE OF ENGINEERING & TECHNOLOGY",
+        subtitle: "Srinivas University Mukka • Department of Computer Science & Engineering",
+      });
+    }, 1500);
 
-    // Screen 3: Webflow Community
+    // Slide 3: In Collaboration With
     addTimeout(() => {
-      setActiveMessage("WEBFLOW COMMUNITY");
-    }, 3100);
+      setIntroSlide({
+        tag: "// IN PARTNERSHIP",
+        title: "IN COLLABORATION WITH",
+        subtitle: "Leading Developer & Innovation Ecosystem",
+      });
+    }, 2900);
 
-    // Screen 4: Countdown starts with "THE OFFICIAL WEBSITE LAUNCHES IN"
+    // Slide 4: Webflow Community
+    addTimeout(() => {
+      setIntroSlide({
+        tag: "// GLOBAL COMMUNITY",
+        title: "WEBFLOW COMMUNITY",
+        subtitle: "Empowering Next-Gen Creators & Engineers Worldwide",
+      });
+    }, 4200);
+
+    // Slide 5: PRESENTS
+    addTimeout(() => {
+      setIntroSlide({
+        tag: "// INAUGURATION CEREMONY",
+        title: "PRESENTS",
+        subtitle: "CODEMEET 2026 • NATIONAL LEVEL 24-HOUR HACKATHON",
+        highlight: true,
+      });
+    }, 5500);
+
+    // Slide 6: Countdown starts with "THE OFFICIAL WEBSITE LAUNCHES IN"
     addTimeout(() => {
       setActiveMessage("THE OFFICIAL WEBSITE LAUNCHES IN");
       setPhase("countdown");
       setCountdown(5);
       soundFX.playLaunchCountdown(5);
-    }, 4500);
+    }, 6900);
 
-    // Countdown sequence (5, 4, 3, 2, 1) - faster paced (1.3s per step)
+    // Countdown sequence (5, 4, 3, 2, 1) - paced at 1.3s per step
     addTimeout(() => {
       setCountdown(4);
       soundFX.playLaunchCountdown(4);
-    }, 5800);
+    }, 8200);
 
     addTimeout(() => {
       setCountdown(3);
       soundFX.playLaunchCountdown(3);
-    }, 7100);
+    }, 9500);
 
     addTimeout(() => {
       setCountdown(2);
       soundFX.playLaunchCountdown(2);
-    }, 8400);
+    }, 10800);
 
     addTimeout(() => {
       setCountdown(1);
       soundFX.playLaunchCountdown(1);
-    }, 9700);
+    }, 12100);
 
     // Ignition Moment (0 / NOW LIVE!)
     addTimeout(() => {
@@ -197,7 +242,7 @@ export default function LaunchPage() {
           router.push("/");
         }, 5000);
       }, 2800);
-    }, 11000);
+    }, 13400);
   };
 
   // Reset sequence (for presenters to re-launch if needed)
@@ -207,6 +252,7 @@ export default function LaunchPage() {
     setPhase("idle");
     setCountdown(5);
     setActiveMessage("");
+    setIntroSlide(INITIAL_SLIDE);
     setShowWebsite(false);
     setIsWarpingFlash(false);
   };
@@ -381,38 +427,52 @@ export default function LaunchPage() {
               {phase === "intro" && (
                 <motion.div
                   key="intro-state"
-                  initial={{ opacity: 0, scale: 0.9, y: 15 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 1.05, filter: "blur(8px)" }}
-                  transition={{ duration: 0.6 }}
-                  className="space-y-6 flex flex-col items-center"
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 1.05, filter: "blur(10px)" }}
+                  transition={{ duration: 0.5 }}
+                  className="space-y-6 flex flex-col items-center max-w-4xl mx-auto"
                 >
-                  <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-black/80 border border-[#00f0ff]/50 text-[#00f0ff] text-xs font-mono animate-pulse shadow-[0_0_20px_rgba(0,240,255,0.2)]">
+                  <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-black/80 border border-[#00f0ff]/50 text-[#00f0ff] text-xs font-mono animate-pulse shadow-[0_0_20px_rgba(0,240,255,0.25)] backdrop-blur-md">
                     <Terminal className="w-3.5 h-3.5" />
-                    <span>// INAUGURATION CEREMONY COMMENCED</span>
+                    <span>{introSlide.tag}</span>
                   </div>
 
-                  <div className="min-h-[140px] flex items-center justify-center">
+                  <div className="min-h-[160px] flex flex-col items-center justify-center text-center">
                     <AnimatePresence mode="wait">
-                      <motion.h2
-                        key={activeMessage}
-                        initial={{ opacity: 0, y: 15, scale: 0.95 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: -15, scale: 1.05 }}
+                      <motion.div
+                        key={introSlide.title}
+                        initial={{ opacity: 0, y: 18, filter: "blur(6px)", scale: 0.96 }}
+                        animate={{ opacity: 1, y: 0, filter: "blur(0px)", scale: 1 }}
+                        exit={{ opacity: 0, y: -18, filter: "blur(6px)", scale: 1.04 }}
                         transition={{ duration: 0.35, ease: "easeOut" }}
-                        className="font-[family-name:var(--font-orbitron)] font-black text-2xl sm:text-4xl md:text-5xl text-white tracking-wide leading-tight drop-shadow-[0_0_30px_rgba(204,255,0,0.5)] max-w-4xl px-4"
+                        className="space-y-3"
                       >
-                        {activeMessage}
-                      </motion.h2>
+                        <h2 className="font-[family-name:var(--font-orbitron)] font-black text-2xl sm:text-4xl md:text-5xl text-white tracking-wide leading-tight drop-shadow-[0_0_40px_rgba(204,255,0,0.5)] max-w-4xl px-4">
+                          {introSlide.highlight ? (
+                            <span className="text-[#ccff00] glow-text-lime tracking-[0.25em] uppercase text-4xl sm:text-6xl md:text-7xl block">
+                              PRESENTS
+                            </span>
+                          ) : (
+                            introSlide.title
+                          )}
+                        </h2>
+
+                        {introSlide.subtitle && (
+                          <p className="text-zinc-400 font-mono text-xs sm:text-sm tracking-widest uppercase">
+                            {introSlide.subtitle}
+                          </p>
+                        )}
+                      </motion.div>
                     </AnimatePresence>
                   </div>
 
-                  <div className="w-64 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                  <div className="w-72 h-1.5 bg-zinc-800/80 rounded-full overflow-hidden border border-white/10">
                     <motion.div
-                      className="h-full bg-gradient-to-r from-[#ccff00] to-[#00f0ff]"
+                      className="h-full bg-gradient-to-r from-[#ccff00] via-[#00f0ff] to-[#ccff00]"
                       initial={{ width: "0%" }}
                       animate={{ width: "100%" }}
-                      transition={{ duration: 4.5, ease: "easeInOut" }}
+                      transition={{ duration: 6.8, ease: "easeInOut" }}
                     />
                   </div>
                 </motion.div>
