@@ -144,6 +144,174 @@ class SoundFX {
     }
   }
 
+  // --- Cinematic Launch Sequence Synthesizer Audio ---
+
+  playLaunchRiser() {
+    try {
+      const ctx = this.getContext();
+      if (!ctx) return;
+      if (ctx.state === "suspended") ctx.resume();
+
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(60, now);
+      osc.frequency.exponentialRampToValueAtTime(880, now + 2.5);
+
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.linearRampToValueAtTime(0.06, now + 2.0);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 2.6);
+
+      const filter = ctx.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(200, now);
+      filter.frequency.exponentialRampToValueAtTime(4000, now + 2.5);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 2.6);
+    } catch {
+      // ignore
+    }
+  }
+
+  playLaunchCountdown(count: number) {
+    try {
+      const ctx = this.getContext();
+      if (!ctx) return;
+      if (ctx.state === "suspended") ctx.resume();
+
+      const now = ctx.currentTime;
+
+      // Punchy transient oscillator (beep)
+      const freq = 440 + (6 - count) * 110; // Pitch increases as it gets closer to 1
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, now);
+      osc.frequency.exponentialRampToValueAtTime(freq * 1.5, now + 0.15);
+
+      gain.gain.setValueAtTime(0.08, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.35);
+
+      // Sub thud
+      const sub = ctx.createOscillator();
+      const subGain = ctx.createGain();
+      sub.type = "triangle";
+      sub.frequency.setValueAtTime(150, now);
+      sub.frequency.exponentialRampToValueAtTime(40, now + 0.25);
+
+      subGain.gain.setValueAtTime(0.09, now);
+      subGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
+
+      sub.connect(subGain);
+      subGain.connect(ctx.destination);
+      sub.start(now);
+      sub.stop(now + 0.25);
+    } catch {
+      // ignore
+    }
+  }
+
+  playBassDrop() {
+    try {
+      const ctx = this.getContext();
+      if (!ctx) return;
+      if (ctx.state === "suspended") ctx.resume();
+
+      const now = ctx.currentTime;
+
+      // Heavy sub-bass boom
+      const sub = ctx.createOscillator();
+      const subGain = ctx.createGain();
+      sub.type = "sine";
+      sub.frequency.setValueAtTime(160, now);
+      sub.frequency.exponentialRampToValueAtTime(28, now + 1.2);
+
+      subGain.gain.setValueAtTime(0.2, now);
+      subGain.gain.exponentialRampToValueAtTime(0.0001, now + 1.4);
+
+      sub.connect(subGain);
+      subGain.connect(ctx.destination);
+      sub.start(now);
+      sub.stop(now + 1.4);
+
+      // Noise impact / explosion transient
+      const bufferSize = ctx.sampleRate * 0.5;
+      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+      }
+
+      const noise = ctx.createBufferSource();
+      noise.buffer = buffer;
+
+      const noiseFilter = ctx.createBiquadFilter();
+      noiseFilter.type = "lowpass";
+      noiseFilter.frequency.setValueAtTime(800, now);
+      noiseFilter.frequency.exponentialRampToValueAtTime(80, now + 0.5);
+
+      const noiseGain = ctx.createGain();
+      noiseGain.gain.setValueAtTime(0.08, now);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+
+      noise.connect(noiseFilter);
+      noiseFilter.connect(noiseGain);
+      noiseGain.connect(ctx.destination);
+
+      noise.start(now);
+      noise.stop(now + 0.5);
+    } catch {
+      // ignore
+    }
+  }
+
+  playLaunchFanfare() {
+    try {
+      const ctx = this.getContext();
+      if (!ctx) return;
+      if (ctx.state === "suspended") ctx.resume();
+
+      const now = ctx.currentTime;
+      // Futuristic arpeggiated fanfare chord (C, E, G, B, D, high C)
+      const chord = [523.25, 659.25, 783.99, 987.77, 1174.66, 1318.51, 1567.98];
+      chord.forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sawtooth";
+        osc.frequency.setValueAtTime(freq, now + idx * 0.06);
+
+        gain.gain.setValueAtTime(0.04, now + idx * 0.06);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.06 + 0.8);
+
+        const filter = ctx.createBiquadFilter();
+        filter.type = "lowpass";
+        filter.frequency.setValueAtTime(3000, now);
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(now + idx * 0.06);
+        osc.stop(now + idx * 0.06 + 0.85);
+      });
+    } catch {
+      // ignore
+    }
+  }
+
   // --- Background Music System (Strict Manual Control) ---
 
   public startBGM() {
