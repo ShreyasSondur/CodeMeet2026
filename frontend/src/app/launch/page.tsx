@@ -109,43 +109,43 @@ export default function LaunchPage() {
     soundFX.playLaunchRiser();
 
     setPhase("intro");
-    setActiveMessage("INITIALIZING CAMPUS PROTOCOL...");
+    setActiveMessage("INITIALIZING INAUGURATION PROTOCOL...");
 
-    // Step 1: Creative Message 1 ("ARE YOU READY FOR CODEMEET 2026?")
+    // Step 1: Professional College / Hackathon Inauguration Message
     setTimeout(() => {
-      setActiveMessage("ARE YOU READY FOR CODEMEET 2026?");
-    }, 1200);
+      setActiveMessage("SRINIVAS UNIVERSITY PRESENTS CODEMEET 2026");
+    }, 2400);
 
     // Step 2: "THE OFFICIAL WEBSITE LAUNCHES IN..."
     setTimeout(() => {
-      setActiveMessage("THE OFFICIAL WEBSITE LAUNCHES IN...");
+      setActiveMessage("THE OFFICIAL WEBSITE LAUNCHES IN");
       setPhase("countdown");
       setCountdown(5);
       soundFX.playLaunchCountdown(5);
-    }, 3600);
+    }, 5400);
 
-    // Step 3: Countdown sequence (5, 4, 3, 2, 1)
+    // Step 3: Countdown sequence (5, 4, 3, 2, 1) - spaced by 1600ms for stage readability
     setTimeout(() => {
       setCountdown(4);
       soundFX.playLaunchCountdown(4);
-    }, 4800);
+    }, 7000);
 
     setTimeout(() => {
       setCountdown(3);
       soundFX.playLaunchCountdown(3);
-    }, 6000);
+    }, 8600);
 
     setTimeout(() => {
       setCountdown(2);
       soundFX.playLaunchCountdown(2);
-    }, 7200);
+    }, 10200);
 
     setTimeout(() => {
       setCountdown(1);
       soundFX.playLaunchCountdown(1);
-    }, 8400);
+    }, 11800);
 
-    // Step 4: Ignition Moment (0 / LAUNCH!)
+    // Step 4: Ignition Moment (0 / NOW LIVE!)
     setTimeout(() => {
       setCountdown(0);
       setPhase("ignite");
@@ -157,14 +157,14 @@ export default function LaunchPage() {
       // Flash fade out
       setTimeout(() => {
         setIsWarpingFlash(false);
-      }, 700);
+      }, 800);
 
       // Step 5: Transition into live synchronized Hero / Website
       setTimeout(() => {
         setPhase("live");
         setShowWebsite(true);
-      }, 3000);
-    }, 9600);
+      }, 4000);
+    }, 13400);
   };
 
   // Reset sequence (for presenters to re-launch if needed)
@@ -199,7 +199,7 @@ export default function LaunchPage() {
 
           <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/40 border border-white/10 text-xs text-zinc-400">
             <Radio className="w-3.5 h-3.5 text-[#00f0ff] animate-pulse" />
-            <span>CEREMONY STAGE MODE</span>
+            <span>INAUGURATION STAGE MODE</span>
           </div>
         </div>
 
@@ -221,10 +221,11 @@ export default function LaunchPage() {
               soundFX.playClick();
               soundFX.toggleBGM();
             }}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border backdrop-blur-md text-xs font-mono transition-all cursor-pointer ${audioEnabled
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border backdrop-blur-md text-xs font-mono transition-all cursor-pointer ${
+              audioEnabled
                 ? "bg-[#ccff00]/15 border-[#ccff00] text-[#ccff00] shadow-[0_0_15px_rgba(204,255,0,0.3)]"
                 : "bg-black/60 border-white/15 text-zinc-400 hover:text-white"
-              }`}
+            }`}
             title="Toggle Stage Audio"
           >
             {audioEnabled ? (
@@ -295,7 +296,7 @@ export default function LaunchPage() {
                   {/* Main Event Titles */}
                   <div className="space-y-3">
                     <div className="text-xs sm:text-sm font-mono tracking-[0.35em] text-[#ccff00] uppercase font-semibold">
-                      // OFFICIAL PORTAL INAUGURATION
+                      // OFFICIAL INAUGURATION CEREMONY
                     </div>
 
                     <h1 className="font-[family-name:var(--font-orbitron)] font-black text-5xl sm:text-7xl md:text-8xl tracking-tight text-white drop-shadow-[0_15px_30px_rgba(0,0,0,0.9)]">
@@ -305,8 +306,8 @@ export default function LaunchPage() {
                       </span>
                     </h1>
 
-                    <p className="text-zinc-400 font-mono text-xs sm:text-sm max-w-lg mx-auto pt-2">
-                      National Level 24-Hour Hackathon • RS 50,000 Prize Pool
+                    <p className="text-zinc-300 font-mono text-xs sm:text-base max-w-xl mx-auto pt-2">
+                      National Level 24-Hour Hackathon • Srinivas University Institute of Engineering & Technology
                     </p>
                   </div>
 
@@ -322,7 +323,7 @@ export default function LaunchPage() {
                     >
                       <Rocket className="w-6 h-6 sm:w-8 sm:h-8 text-[#ccff00] group-hover:rotate-12 transition-transform duration-300 animate-bounce" />
                       <span className="bg-gradient-to-r from-white via-[#ccff00] to-white bg-clip-text text-transparent">
-                        INITIATE OFFICIAL LAUNCH
+                        LAUNCH OFFICIAL PORTAL
                       </span>
                       <Sparkles className="w-5 h-5 text-[#00f0ff] animate-spin" />
                     </button>
@@ -332,7 +333,7 @@ export default function LaunchPage() {
                   <div className="flex items-center gap-4 text-[11px] font-mono text-zinc-500 pt-2">
                     <span className="flex items-center gap-1.5">
                       <span className="w-2 h-2 rounded-full bg-[#ccff00] animate-ping" />
-                      SYSTEM STATUS: ARMED
+                      CEREMONY STATUS: READY
                     </span>
                     <span>•</span>
                     <span>VENUE: AUDITORIUM STAGE</span>
@@ -349,24 +350,24 @@ export default function LaunchPage() {
                   initial={{ opacity: 0, scale: 0.9, y: 15 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 1.05, filter: "blur(8px)" }}
-                  transition={{ duration: 0.5 }}
+                  transition={{ duration: 0.6 }}
                   className="space-y-6 flex flex-col items-center"
                 >
-                  <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-black/80 border border-[#00f0ff]/50 text-[#00f0ff] text-xs font-mono animate-pulse">
+                  <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-black/80 border border-[#00f0ff]/50 text-[#00f0ff] text-xs font-mono animate-pulse shadow-[0_0_20px_rgba(0,240,255,0.2)]">
                     <Terminal className="w-3.5 h-3.5" />
-                    <span>// DEPLOYMENT SEQUENCE COMMENCED</span>
+                    <span>// INAUGURATION CEREMONY COMMENCED</span>
                   </div>
 
-                  <h2 className="font-[family-name:var(--font-orbitron)] font-black text-4xl sm:text-6xl md:text-7xl text-white tracking-wide leading-tight drop-shadow-[0_0_30px_rgba(204,255,0,0.5)]">
+                  <h2 className="font-[family-name:var(--font-orbitron)] font-black text-3xl sm:text-5xl md:text-6xl text-white tracking-wide leading-tight drop-shadow-[0_0_30px_rgba(204,255,0,0.5)] max-w-3xl">
                     {activeMessage}
                   </h2>
 
-                  <div className="w-48 h-1 bg-zinc-800 rounded-full overflow-hidden">
+                  <div className="w-64 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
                     <motion.div
                       className="h-full bg-gradient-to-r from-[#ccff00] to-[#00f0ff]"
                       initial={{ width: "0%" }}
                       animate={{ width: "100%" }}
-                      transition={{ duration: 2.2, ease: "easeInOut" }}
+                      transition={{ duration: 2.8, ease: "easeInOut" }}
                     />
                   </div>
                 </motion.div>
@@ -376,19 +377,22 @@ export default function LaunchPage() {
               {phase === "countdown" && (
                 <motion.div
                   key={`countdown-state-${countdown}`}
-                  initial={{ opacity: 0, scale: 2.2, filter: "blur(12px)" }}
+                  initial={{ opacity: 0, scale: 1.4, filter: "blur(8px)" }}
                   animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-                  exit={{ opacity: 0, scale: 0.3, filter: "blur(10px)" }}
+                  exit={{ opacity: 0, scale: 0.6, filter: "blur(6px)" }}
                   transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-                  className="flex flex-col items-center space-y-4"
+                  className="flex flex-col items-center space-y-6"
                 >
-                  <div className="text-xs sm:text-sm font-mono tracking-[0.3em] text-[#00f0ff] uppercase font-bold animate-pulse">
-                    {activeMessage}
+                  {/* Highlighted Launch Announcement Banner */}
+                  <div className="inline-flex items-center gap-3 px-6 py-2.5 rounded-full bg-black/80 border-2 border-[#00f0ff] text-[#00f0ff] font-mono font-bold text-xs sm:text-base md:text-lg tracking-[0.25em] uppercase shadow-[0_0_30px_rgba(0,240,255,0.5)] backdrop-blur-md animate-pulse">
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#00f0ff] animate-ping" />
+                    <span>{activeMessage}</span>
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#00f0ff] animate-ping" />
                   </div>
 
                   {/* Giant Glowing 3D Countdown Number */}
                   <div className="relative flex items-center justify-center my-2">
-                    <div className="font-[family-name:var(--font-orbitron)] font-black text-8xl sm:text-9xl md:text-[14rem] leading-none text-[#ccff00] drop-shadow-[0_0_80px_rgba(204,255,0,0.9)] glow-text-lime select-none">
+                    <div className="font-[family-name:var(--font-orbitron)] font-black text-8xl sm:text-9xl md:text-[14rem] leading-none text-[#ccff00] drop-shadow-[0_0_90px_rgba(204,255,0,0.9)] glow-text-lime select-none">
                       {countdown}
                     </div>
 
@@ -396,13 +400,13 @@ export default function LaunchPage() {
                     <div className="absolute inset-0 -m-8 rounded-full border-2 border-[#ccff00]/40 animate-ping pointer-events-none" />
                   </div>
 
-                  {/* Dynamic Sub-Status per number */}
-                  <div className="px-5 py-2 rounded-full bg-black/80 border border-white/20 backdrop-blur-md text-xs sm:text-sm font-mono text-zinc-300">
+                  {/* Dynamic Sub-Status per number (No prize pool) */}
+                  <div className="px-6 py-2.5 rounded-full bg-black/90 border border-white/20 backdrop-blur-md text-xs sm:text-sm md:text-base font-mono text-zinc-200 shadow-[0_0_20px_rgba(0,0,0,0.8)]">
                     {countdown === 5 && "✦ SYNCHRONIZING SUIET CAMPUS NETWORK ✦"}
                     {countdown === 4 && "✦ POWERED BY IBM CLOUD & WATSONX ✦"}
-                    {countdown === 3 && "✦ 24-HOUR ARENA INITIALIZED ✦"}
-                    {countdown === 2 && "✦ RS 50,000 PRIZE POOL LIVE ✦"}
-                    {countdown === 1 && "✦ MAXIMUM POWER • STAND BY ✦"}
+                    {countdown === 3 && "✦ 24-HOUR NATIONAL ARENA INITIALIZED ✦"}
+                    {countdown === 2 && "✦ INNOVATION TRACKS ACTIVATED ✦"}
+                    {countdown === 1 && "✦ MAXIMUM POWER • READY FOR LAUNCH ✦"}
                   </div>
                 </motion.div>
               )}
@@ -421,12 +425,12 @@ export default function LaunchPage() {
                     <span>PORTAL DEPLOYED SUCCESSFULLY</span>
                   </div>
 
-                  <h1 className="font-[family-name:var(--font-orbitron)] font-black text-5xl sm:text-7xl md:text-8xl text-white tracking-tight drop-shadow-[0_0_50px_rgba(204,255,0,0.8)]">
-                    CODEMEET <span className="text-[#ccff00] glow-text-lime">IS LIVE!</span>
+                  <h1 className="font-[family-name:var(--font-orbitron)] font-black text-5xl sm:text-7xl md:text-8xl text-white tracking-tight drop-shadow-[0_0_60px_rgba(204,255,0,0.9)]">
+                    WEBSITE IS <span className="text-[#ccff00] glow-text-lime">NOW LIVE!</span>
                   </h1>
 
-                  <p className="text-sm sm:text-lg font-mono text-zinc-300 max-w-xl">
-                    WELCOME TO SRINIVAS UNIVERSITY&apos;S PREMIER HACKATHON
+                  <p className="text-sm sm:text-xl font-mono text-zinc-300 max-w-xl">
+                    WELCOME TO CODEMEET 2026 • SRINIVAS UNIVERSITY
                   </p>
                 </motion.div>
               )}
@@ -473,7 +477,7 @@ export default function LaunchPage() {
           {/* Top Stage Launch Success Banner */}
           <div className="w-full bg-gradient-to-r from-[#ccff00] via-[#00f0ff] to-[#ccff00] text-black py-2 px-4 text-center font-mono font-bold text-xs sm:text-sm tracking-wider flex items-center justify-center gap-2 shadow-[0_0_25px_rgba(204,255,0,0.5)]">
             <Sparkles className="w-4 h-4" />
-            <span>✦ CODEMEET 2026 IS OFFICIALLY LAUNCHED • REGISTRATIONS ARE NOW OPEN ✦</span>
+            <span>✦ CODEMEET 2026 OFFICIAL WEBSITE IS NOW LIVE • REGISTRATIONS ARE OPEN ✦</span>
             <Sparkles className="w-4 h-4" />
           </div>
 
