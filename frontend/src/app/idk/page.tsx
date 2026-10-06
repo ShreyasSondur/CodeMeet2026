@@ -443,7 +443,7 @@ export default function AdminPage() {
         setEventPricings((prev) => ({ ...prev, [eventId]: data.pricing }));
         setPriceNotice((prev) => ({
           ...prev,
-          [eventId]: `Success! Fee updated to ₹${amountInr.toFixed(2)} & synced with Razorpay gateway.`,
+          [eventId]: `Success! Fee updated to ₹${amountInr.toFixed(2)} & synced with Cashfree PG gateway.`,
         }));
         setTimeout(() => setPriceNotice((prev) => ({ ...prev, [eventId]: "" })), 4000);
       } else {
@@ -1002,7 +1002,7 @@ export default function AdminPage() {
             <CreditCard className="w-4 h-4" />
             <span>02. EVENT PRICING SETTINGS</span>
             <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${adminTab === "pricing" ? "bg-black/20 text-black" : "bg-white/10 text-zinc-300"}`}>
-              RAZORPAY SYNC
+              CASHFREE SYNC
             </span>
           </button>
 
@@ -1340,7 +1340,7 @@ export default function AdminPage() {
         )}
 
         {/* ======================================================== */}
-        {/* TAB 2: DYNAMIC EVENT PRICING & RAZORPAY GATEWAY          */}
+        {/* TAB 2: DYNAMIC EVENT PRICING & CASHFREE GATEWAY          */}
         {/* ======================================================== */}
         {adminTab === "pricing" && (
           <div className="space-y-6 animate-in fade-in duration-300">
@@ -1354,10 +1354,10 @@ export default function AdminPage() {
                     <span>DYNAMIC ENTRY FEE CONFIGURATOR</span>
                   </div>
                   <h2 className="font-[family-name:var(--font-orbitron)] font-black text-2xl text-white">
-                    EVENT ENTRY FEES & RAZORPAY GATEWAY SYNC
+                    EVENT ENTRY FEES & CASHFREE GATEWAY SYNC
                   </h2>
                   <p className="text-xs text-zinc-400 font-mono leading-relaxed">
-                    Update the registration entry fee for any track. Changes are stored in the server database and instantly reflected in live Razorpay checkout orders and on the <strong className="text-white">/register</strong> page.
+                    Update the registration entry fee for any track. Changes are stored in the server database and instantly reflected in live Cashfree checkout orders and on the <strong className="text-white">/register</strong> page.
                   </p>
                 </div>
 
@@ -1482,8 +1482,8 @@ export default function AdminPage() {
                           />
                         </div>
                         <div className="text-[10px] font-mono text-zinc-500 mt-1 flex justify-between">
-                          <span>Min: ₹1.00 (100 paise)</span>
-                          <span>Razorpay Order: {Math.round((parseFloat(inputValue) || 0) * 100)} paise</span>
+                          <span>Min: ₹1.00</span>
+                          <span>Cashfree Order Fee: ₹{parseFloat(inputValue) || 0}</span>
                         </div>
                       </div>
 
@@ -1796,7 +1796,7 @@ export default function AdminPage() {
                 </div>
 
                 <div className="p-4 rounded-2xl bg-black/50 border border-white/10 space-y-1">
-                  <div className="text-[11px] font-mono text-zinc-500 uppercase">Razorpay Payment Telemetry</div>
+                  <div className="text-[11px] font-mono text-zinc-500 uppercase">Cashfree Payment Telemetry</div>
                   <div className="text-xs font-mono text-white flex items-center justify-between">
                     <span className="text-emerald-400 font-bold">₹{selectedRegDetails.amount_paid || "1"} (PAID)</span>
                     <span className="text-zinc-400 text-[10px] truncate max-w-[140px]">

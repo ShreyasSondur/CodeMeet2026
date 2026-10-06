@@ -65,8 +65,8 @@ const EVENTS_DATA: Record<string, EventMeta> = {
     badgeBg: "bg-[#ccff00]/15 text-[#ccff00] border-[#ccff00]/40",
     date: "OCT 23-24 (R1 ONLINE) • NOV 01-02 (R2 OFFLINE)",
     teamSize: "3 - 4 Members",
-    entryFee: "₹1 (Test Mode)",
-    feeNote: "Razorpay Test Sandbox ₹1.00",
+    entryFee: "₹100 (Official)",
+    feeNote: "Cashfree Instant PG Sync",
     description:
       "24-hour national hackathon. Round 1 online screening followed by the grand 24H offline build at SUIET Mukka for the Top 30 finalists.",
     icon: Zap,
@@ -84,8 +84,8 @@ const EVENTS_DATA: Record<string, EventMeta> = {
     badgeBg: "bg-[#f59e0b]/15 text-[#f59e0b] border-[#f59e0b]/40",
     date: "OCTOBER 31, 2026 • 10:30 AM",
     teamSize: "Solo Developer (1P)",
-    entryFee: "₹1 (Test Mode)",
-    feeNote: "Razorpay Test Sandbox ₹1.00",
+    entryFee: "₹100 (Official)",
+    feeNote: "Cashfree Instant PG Sync",
     description:
       "Battle of developer reflexes and keyboard mastery. Compete in live syntax typing, WPM speed benchmarks, and coding sprints under pressure.",
     icon: Keyboard,
@@ -103,8 +103,8 @@ const EVENTS_DATA: Record<string, EventMeta> = {
     badgeBg: "bg-[#00f0ff]/15 text-[#00f0ff] border-[#00f0ff]/40",
     date: "OCTOBER 31, 2026 • 2:30 PM",
     teamSize: "4 Members",
-    entryFee: "₹1 (Test Mode)",
-    feeNote: "Razorpay Test Sandbox ₹1.00",
+    entryFee: "₹200 (Official)",
+    feeNote: "Cashfree Instant PG Sync",
     description:
       "Campus-wide quest decoding cryptic ciphers, hidden QR coordinates, logical riddles, and physical clue trails across SUIET.",
     icon: Compass,
@@ -122,8 +122,8 @@ const EVENTS_DATA: Record<string, EventMeta> = {
     badgeBg: "bg-[#ff007f]/15 text-[#ff007f] border-[#ff007f]/40",
     date: "OCTOBER 31, 2026 • 10:30 AM",
     teamSize: "Squad (4 Players)",
-    entryFee: "₹1 (Test Mode)",
-    feeNote: "Razorpay Test Sandbox ₹1.00",
+    entryFee: "₹200 (Official)",
+    feeNote: "Cashfree Instant PG Sync",
     description:
       "High-adrenaline mobile esports showdown. Custom lobbies, tactical battle royale rounds, and ultimate campus gaming supremacy.",
     icon: Gamepad2,
@@ -139,9 +139,9 @@ interface MemberData {
   phone: string;
 }
 
-const loadRazorpayScript = (): Promise<boolean> => {
+const loadCashfreeScript = (): Promise<boolean> => {
   return new Promise((resolve) => {
-    if (typeof window !== "undefined" && (window as any).Razorpay) {
+    if (typeof window !== "undefined" && (window as any).Cashfree) {
       resolve(true);
       return;
     }
@@ -149,14 +149,21 @@ const loadRazorpayScript = (): Promise<boolean> => {
       resolve(false);
       return;
     }
+    const existingScript = document.getElementById("cashfree-sdk-script");
+    if (existingScript) {
+      resolve(true);
+      return;
+    }
     const script = document.createElement("script");
-    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.id = "cashfree-sdk-script";
+    script.src = "https://sdk.cashfree.com/js/v3/cashfree.js";
     script.async = true;
     script.onload = () => resolve(true);
     script.onerror = () => resolve(false);
     document.body.appendChild(script);
   });
 };
+
 
 function RegisterContent() {
   const searchParams = useSearchParams();
@@ -231,6 +238,41 @@ function RegisterContent() {
       setSelectedEventId(eventParam);
     }
   }, [eventParam]);
+
+  // Handle return redirect from Cashfree (when redirected with ?order_id=...)
+  const orderIdParam = searchParams.get("order_id");
+  useEffect(() => {
+    if (orderIdParam && !isSuccess) {
+      setIsSubmitting(true);
+      fetch(`${apiUrl}/api/verify-payment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order_id: orderIdParam }),
+      })
+        .then(async (res) => {
+          if (res.ok) {
+            const data = await res.json();
+            setConfirmedRegId(data.registration_id || orderIdParam);
+            setConfirmedPaymentId(data.payment_id || orderIdParam);
+            if (data.data?.amount_paid) {
+              setConfirmedAmount(parseFloat(data.data.amount_paid) || 100);
+            }
+            setIsSuccess(true);
+            setShowWhatsAppModal(true);
+            soundFX.playSuccess();
+          } else {
+            const err = await res.json().catch(() => ({}));
+            setPaymentError(err.detail || "Payment is pending confirmation. If amount was debited, please contact support.");
+          }
+        })
+        .catch((e) => {
+          console.error("Auto-verification error:", e);
+        })
+        .finally(() => {
+          setIsSubmitting(false);
+        });
+    }
+  }, [orderIdParam, apiUrl]);
 
   const activeEvent = EVENTS_DATA[selectedEventId] || EVENTS_DATA.hackathon;
   const activeFeeInr = eventPricings[activeEvent.id]?.amount_inr ?? 100;
@@ -358,10 +400,23 @@ function RegisterContent() {
     }
 
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
-    const defaultRzpKey = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_TjUjaEkXrem1Yo";
+
+    const memberPayload = activeEvent.isSolo
+      ? [{ name: soloParticipant.name, email: soloParticipant.email, phone: soloParticipant.phone, is_leader: true }]
+      : members
+          .filter((m) => m.name.trim() !== "")
+          .map((m, idx) => ({ ...m, is_leader: idx === 0 }));
 
     // 1. BACKEND - Call /api/create-order with dynamic event pricing
-    let orderData: { order_id: string; amount: number; amount_inr?: number; currency: string; key_id: string } | null = null;
+    let orderData: {
+      order_id: string;
+      payment_session_id: string;
+      amount: number;
+      amount_inr?: number;
+      currency: string;
+      environment?: string;
+    } | null = null;
+
     try {
       const orderRes = await fetch(`${apiUrl}/api/create-order`, {
         method: "POST",
@@ -369,6 +424,12 @@ function RegisterContent() {
         body: JSON.stringify({
           event_id: activeEvent.id,
           college_name: collegeName,
+          team_name: activeEvent.isSolo ? "Solo" : teamName,
+          leader_name: leaderName,
+          leader_email: leaderEmail,
+          leader_phone: leaderPhone,
+          is_solo: activeEvent.isSolo,
+          members: memberPayload,
         }),
       });
 
@@ -385,117 +446,111 @@ function RegisterContent() {
       return;
     }
 
-    if (!orderData || !orderData.order_id) {
+    if (!orderData || !orderData.payment_session_id) {
       setIsSubmitting(false);
-      setPaymentError("Could not retrieve order ID from Razorpay. Please retry.");
+      setPaymentError("Could not retrieve payment session from Cashfree. Please retry.");
       return;
     }
 
     const effectiveInr = orderData.amount_inr || (orderData.amount / 100);
 
-    // 2. Ensure Razorpay Checkout script is loaded
-    const isLoaded = await loadRazorpayScript();
-    if (!isLoaded || typeof (window as any).Razorpay === "undefined") {
+    // 2. Ensure Cashfree SDK script is loaded
+    const isLoaded = await loadCashfreeScript();
+    if (!isLoaded || typeof (window as any).Cashfree === "undefined") {
       setIsSubmitting(false);
-      setPaymentError("Razorpay SDK could not be loaded. Please check your internet connection.");
+      setPaymentError("Cashfree SDK could not be loaded. Please check your internet connection.");
       return;
     }
 
-    const memberPayload = activeEvent.isSolo
-      ? [{ name: soloParticipant.name, email: soloParticipant.email, phone: soloParticipant.phone, is_leader: true }]
-      : members
-          .filter((m) => m.name.trim() !== "")
-          .map((m, idx) => ({ ...m, is_leader: idx === 0 }));
+    // Helper to verify payment on backend
+    const completeBackendVerification = async (paymentIdHint?: string) => {
+      try {
+        const verifyRes = await fetch(`${apiUrl}/api/verify-payment`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            order_id: orderData!.order_id,
+            payment_id: paymentIdHint || "",
+            event_id: activeEvent.id,
+            event_name: activeEvent.title,
+            team_name: activeEvent.isSolo ? "" : teamName,
+            college_name: collegeName,
+            is_solo: activeEvent.isSolo,
+            members: memberPayload,
+            amount_paid: String(effectiveInr),
+          }),
+        });
 
-    // 3. FRONTEND - Open Razorpay Modal with Order ID
-    const options: Record<string, any> = {
-      key: orderData.key_id || defaultRzpKey,
-      amount: orderData.amount, // in paise
-      currency: orderData.currency || "INR",
-      name: "SUIET Mukka • Webflow Community",
-      description: `CODEMEET 2026 - ${activeEvent.title} (₹${effectiveInr})`,
-      image: "/favicon.svg",
-      order_id: orderData.order_id,
-      prefill: {
-        name: leaderName,
-        email: leaderEmail,
-        contact: leaderPhone,
-      },
-      theme: {
-        color: activeEvent.color || "#ccff00",
-        backdrop_color: "#050507",
-      },
-      handler: async function (response: {
-        razorpay_payment_id: string;
-        razorpay_order_id: string;
-        razorpay_signature: string;
-      }) {
-        try {
-          // 4. BACKEND - Call /api/verify-payment with HMAC-SHA256 signature
-          const verifyRes = await fetch(`${apiUrl}/api/verify-payment`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-              event_id: activeEvent.id,
-              event_name: activeEvent.title,
-              team_name: activeEvent.isSolo ? "" : teamName,
-              college_name: collegeName,
-              is_solo: activeEvent.isSolo,
-              members: memberPayload,
-              amount_paid: String(effectiveInr),
-            }),
-          });
-
-          if (verifyRes.ok) {
-            const resultData = await verifyRes.json();
-            setConfirmedRegId(
-              resultData.registration_id ||
-                `CM26-${activeEvent.id.toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`
-            );
-            setConfirmedPaymentId(response.razorpay_payment_id);
-            setConfirmedAmount(effectiveInr);
-            setIsSubmitting(false);
-            setIsSuccess(true);
-            setShowWhatsAppModal(true);
-            soundFX.playSuccess();
-          } else {
-            const errData = await verifyRes.json().catch(() => ({}));
-            setIsSubmitting(false);
-            setPaymentError(errData.detail || "Payment verification failed. Please contact support.");
-            soundFX.playClick();
-          }
-        } catch (verErr: any) {
-          console.error("Verification error:", verErr);
+        if (verifyRes.ok) {
+          const resultData = await verifyRes.json();
+          setConfirmedRegId(
+            resultData.registration_id ||
+              `CM26-${activeEvent.id.toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`
+          );
+          setConfirmedPaymentId(resultData.payment_id || orderData!.order_id);
+          setConfirmedAmount(effectiveInr);
           setIsSubmitting(false);
-          setPaymentError("Network error during payment verification. Please contact support.");
+          setIsSuccess(true);
+          setShowWhatsAppModal(true);
+          soundFX.playSuccess();
+        } else {
+          const errData = await verifyRes.json().catch(() => ({}));
+          setIsSubmitting(false);
+          setPaymentError(errData.detail || "Payment verification failed or pending. If amount was debited, please contact support.");
+          soundFX.playClick();
         }
-      },
-      modal: {
-        ondismiss: function () {
-          setIsSubmitting(false);
-          setPaymentError("Payment window was closed. Click below to retry payment.");
-        },
-      },
+      } catch (verErr: any) {
+        console.error("Verification error:", verErr);
+        setIsSubmitting(false);
+        setPaymentError("Network error during payment verification. Please contact support.");
+      }
     };
 
+    // 3. FRONTEND - Launch Cashfree Seamless Modal Checkout
     try {
-      const rzp = new (window as any).Razorpay(options);
-      rzp.on("payment.failed", function (response: any) {
-        setIsSubmitting(false);
-        setPaymentError(
-          response.error?.description || "Payment transaction failed. Please retry."
-        );
+      const cfEnv = orderData.environment || process.env.NEXT_PUBLIC_CASHFREE_ENV || "production";
+      const cashfree = (window as any).Cashfree({
+        mode: cfEnv.toLowerCase().includes("sandbox") ? "sandbox" : "production",
       });
-      rzp.open();
+
+      const checkoutOptions = {
+        paymentSessionId: orderData.payment_session_id,
+        redirectTarget: "_modal",
+      };
+
+      cashfree
+        .checkout(checkoutOptions)
+        .then((result: any) => {
+          if (result.error) {
+            console.warn("Cashfree checkout notice:", result.error);
+            setIsSubmitting(false);
+            setPaymentError(result.error.message || "Payment window closed. Click below to retry payment.");
+            return;
+          }
+          if (result.paymentDetails) {
+            console.log("Cashfree payment details:", result.paymentDetails);
+            completeBackendVerification(result.paymentDetails.paymentMessage);
+            return;
+          }
+          if (result.redirect) {
+            console.log("Cashfree redirecting...");
+            return;
+          }
+          // Verification check when modal finishes
+          completeBackendVerification();
+        })
+        .catch((err: any) => {
+          console.error("Cashfree checkout error:", err);
+          setIsSubmitting(false);
+          setPaymentError("Payment session interrupted. If your account was debited, please contact support.");
+        });
     } catch (err: any) {
-      console.error("Razorpay trigger error:", err);
+      console.error("Cashfree initialization error:", err);
       setIsSubmitting(false);
-      setPaymentError("Could not open Razorpay checkout modal: " + err.message);
+      setPaymentError("Could not open Cashfree checkout modal: " + err.message);
     }
   };
+
 
   return (
     <div className="min-h-screen w-full bg-[#050507] text-white py-8 sm:py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden cyber-grid selection:bg-[#ccff00] selection:text-black">
@@ -648,7 +703,7 @@ function RegisterContent() {
                       ₹{activeFeeInr} / {activeEvent.isSolo ? "Person" : "Team"}
                     </div>
                     <div className="text-[10px] text-zinc-400 font-normal">
-                      Razorpay Instant Checkout
+                      Cashfree Instant PG Checkout
                     </div>
                   </div>
                 </div>
@@ -690,9 +745,9 @@ function RegisterContent() {
                     </span>
                   </div>
                   <div className="flex justify-between border-b border-white/5 pb-2">
-                    <span className="text-zinc-500">RAZORPAY REF ID:</span>
+                    <span className="text-zinc-500">CASHFREE REF ID:</span>
                     <span className="text-cyan-400 font-bold truncate max-w-[200px]">
-                      {confirmedPaymentId || "pay_test_verified"}
+                      {confirmedPaymentId || "pay_verified"}
                     </span>
                   </div>
                   <div className="flex justify-between border-b border-white/5 pb-2">
@@ -1062,11 +1117,11 @@ function RegisterContent() {
                   </label>
                 </div>
 
-                {/* Submit Action Bar with Razorpay Trigger */}
+                {/* Submit Action Bar with Cashfree Trigger */}
                 <div className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-white/10">
                   <div className="flex items-center gap-2 text-xs font-mono text-zinc-400">
                     <Lock className="w-4 h-4 text-[#ccff00]" />
-                    <span>RAZORPAY SECURE GATEWAY • 256-BIT ENCRYPTION</span>
+                    <span>CASHFREE SECURE GATEWAY • 256-BIT ENCRYPTION</span>
                   </div>
 
                   <button

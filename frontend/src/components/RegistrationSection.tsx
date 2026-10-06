@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { soundFX } from "@/lib/audio";
@@ -100,10 +101,25 @@ const eventCards: EventCard[] = [
 ];
 
 export default function RegistrationSection() {
+  const [pricings, setPricings] = useState<Record<string, { amount_inr: number }>>({});
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
+  useEffect(() => {
+    fetch(`${apiUrl}/api/events/pricing`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.pricing) {
+          setPricings(data.pricing);
+        }
+      })
+      .catch(() => {});
+  }, [apiUrl]);
+
   const scrollToTop = () => {
     soundFX.playClick();
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
+
 
   return (
     <section
@@ -227,7 +243,9 @@ export default function RegistrationSection() {
                   <div className="text-right font-mono">
                     <div className="text-xs font-bold text-white flex items-center gap-1 justify-end">
                       <span className="text-[10px] text-zinc-400">ENTRY:</span>
-                      <span className="text-[#ccff00] font-black">{card.entryFee}</span>
+                      <span className="text-[#ccff00] font-black">
+                        {pricings[card.id] ? `₹${pricings[card.id].amount_inr}` : card.entryFee}
+                      </span>
                     </div>
                     {card.feeSubtext && (
                       <div className="text-[10px] text-zinc-400">{card.feeSubtext}</div>

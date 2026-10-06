@@ -308,7 +308,7 @@ export default function FAQSection() {
 
         </div>
 
-        {/* Mandatory Razorpay Compliance Policy Links */}
+        {/* Mandatory Payment Gateway Compliance Policy Links */}
         <div className="py-4 px-4 rounded-xl bg-black/60 border border-white/10 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 font-mono text-xs text-zinc-300 my-4">
           <Link
             href="/terms"

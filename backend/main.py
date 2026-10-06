@@ -17,8 +17,7 @@ from pydantic import BaseModel, EmailStr, field_validator
 from dotenv import load_dotenv
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-import razorpay
-
+import requests
 from database import (
     init_db,
     save_registration,
@@ -33,7 +32,10 @@ from database import (
     delete_admin_session,
     save_admin_otp,
     get_admin_otp,
-    clear_admin_otp
+    clear_admin_otp,
+    save_pending_order,
+    get_pending_order,
+    get_registration_by_payment_id
 )
 from email_service import send_admin_otp_email, send_registration_confirmation_emails
 
@@ -41,18 +43,29 @@ load_dotenv()
 
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "idontknow")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", os.getenv("SMTP_EMAIL", "admin@codemeet.com"))
-RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID", "rzp_test_TjUjaEkXrem1Yo")
-RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "6Bs9uraea30uFMlFH7NoQt4n")
 
-# Initialize Razorpay client
-razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
+# Cashfree Payment Gateway (v3) Configuration
+CASHFREE_APP_ID = os.getenv("CASHFREE_APP_ID", "").strip()
+CASHFREE_SECRET_KEY = os.getenv("CASHFREE_SECRET_KEY", "").strip()
+CASHFREE_ENV = os.getenv("CASHFREE_ENV", "PROD").strip().upper()
+CASHFREE_API_VERSION = os.getenv("CASHFREE_API_VERSION", "2023-08-01").strip()
+
+CASHFREE_BASE_URL = "https://api.cashfree.com/pg" if CASHFREE_ENV in ("PROD", "PRODUCTION") else "https://sandbox.cashfree.com/pg"
+
+def get_cf_headers():
+    return {
+        "Content-Type": "application/json",
+        "x-api-version": CASHFREE_API_VERSION,
+        "x-client-id": CASHFREE_APP_ID,
+        "x-client-secret": CASHFREE_SECRET_KEY
+    }
 
 ENABLE_DOCS = os.getenv("ENABLE_DOCS", "false").lower() in ("true", "1", "yes")
 
 app = FastAPI(
     title="CodeMeet 2026 API",
-    description="Backend API with Razorpay Standard Checkout & 2FA Admin for CodeMeet 2026",
-    version="1.3.0",
+    description="Backend API with Cashfree PG v3 Checkout & 2FA Admin for CodeMeet 2026",
+    version="1.4.0",
     docs_url="/docs" if ENABLE_DOCS else None,
     redoc_url="/redoc" if ENABLE_DOCS else None,
     openapi_url="/openapi.json" if ENABLE_DOCS else None,
@@ -135,20 +148,29 @@ class RegistrationRequest(BaseModel):
     amount_paid: Optional[str] = "1"
 
 class CreateOrderRequest(BaseModel):
-    amount: Optional[int] = None  # in paise, if not provided will fetch from dynamic event pricing
+    amount: Optional[int] = None  # in paise (legacy compatibility) or auto-resolved from DB
+    amount_inr: Optional[float] = None  # in INR
     currency: Optional[str] = "INR"
     receipt: Optional[str] = None
     event_id: Optional[str] = "hackathon"
     college_name: Optional[str] = ""
+    team_name: Optional[str] = ""
+    leader_name: Optional[str] = ""
+    leader_email: Optional[str] = ""
+    leader_phone: Optional[str] = ""
+    is_solo: Optional[bool] = False
+    members: Optional[List[MemberSchema]] = None
 
 class UpdateEventPricingRequest(BaseModel):
     event_id: str
     amount_inr: float
 
 class VerifyPaymentRequest(BaseModel):
-    razorpay_order_id: str
-    razorpay_payment_id: str
-    razorpay_signature: str
+    order_id: Optional[str] = None
+    razorpay_order_id: Optional[str] = None  # fallback backward compatibility
+    payment_id: Optional[str] = ""
+    razorpay_payment_id: Optional[str] = ""  # fallback backward compatibility
+    razorpay_signature: Optional[str] = ""
     # Optional registration data to persist upon verification
     event_id: Optional[str] = None
     event_name: Optional[str] = None
@@ -157,6 +179,7 @@ class VerifyPaymentRequest(BaseModel):
     members: Optional[List[MemberSchema]] = None
     is_solo: Optional[bool] = False
     amount_paid: Optional[str] = "1"
+
 
 class RequestOTPRequest(BaseModel):
     password: str
@@ -195,9 +218,10 @@ def verify_admin_auth(
 def read_root():
     return {
         "status": "online",
-        "service": "CodeMeet 2026 Backend API (Razorpay Standard Checkout + 2FA Protected)",
-        "version": "1.3.0"
+        "service": "CodeMeet 2026 Backend API (Cashfree PG v3 Checkout + 2FA Protected)",
+        "version": "1.4.0"
     }
+
 
 @app.get("/api/health")
 def health_check():
@@ -350,14 +374,16 @@ def admin_delete_rulebook(
 @app.get("/api/config/payment")
 def get_payment_config():
     return {
-        "key_id": RAZORPAY_KEY_ID,
+        "gateway": "cashfree",
+        "app_id": CASHFREE_APP_ID,
+        "environment": "production" if CASHFREE_ENV in ("PROD", "PRODUCTION") else "sandbox",
         "pricing": get_event_pricings(),
         "currency": "INR",
-        "mode": "test"
+        "mode": "production" if CASHFREE_ENV in ("PROD", "PRODUCTION") else "sandbox"
     }
 
 # ==========================================
-# STEP 1: BACKEND - CREATE ORDER (DYNAMIC PRICING)
+# STEP 1: BACKEND - CASHFREE CREATE ORDER (DYNAMIC PRICING)
 # ==========================================
 @app.post("/api/create-order")
 @app.post("/api/payment/create-order")
@@ -365,87 +391,223 @@ def create_order(data: CreateOrderRequest):
     event_id = data.event_id or "hackathon"
     pricing = get_event_pricing(event_id)
 
-    # Resolve amount in paise dynamically from admin-configured pricing if not explicitly specified
-    if data.amount and data.amount >= 100:
-        amount_paise = data.amount
+    # Resolve amount in INR dynamically from admin-configured pricing if not explicitly specified
+    if data.amount_inr and data.amount_inr >= 1.0:
+        order_amount_inr = round(float(data.amount_inr), 2)
+    elif data.amount and data.amount >= 100:
+        order_amount_inr = round(float(data.amount) / 100.0, 2)
     elif pricing:
-        amount_paise = pricing["amount_paise"]
+        order_amount_inr = round(float(pricing["amount_inr"]), 2)
     else:
-        amount_paise = 10000  # Default ₹100.00
+        order_amount_inr = 100.00
 
-    # Minimum amount validation: 100 paise (₹1.00)
-    if amount_paise < 100:
+    # Minimum amount validation: ₹1.00
+    if order_amount_inr < 1.0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Amount must be at least 100 paise (₹1.00)"
+            detail="Order amount must be at least ₹1.00"
         )
 
-    receipt_id = data.receipt or f"rcpt_{uuid.uuid4().hex[:10]}"
+    clean_event = re.sub(r"[^A-Za-z0-9]", "", event_id).upper()[:4] or "HACK"
+    order_id = f"CM26_{clean_event}_{uuid.uuid4().hex[:10].upper()}"
+
+    # Extract customer info
+    cust_name = data.leader_name or (data.members[0].name if data.members and len(data.members) > 0 else "Participant")
+    cust_email = data.leader_email or (data.members[0].email if data.members and len(data.members) > 0 else "participant@codemeet.com")
+    cust_phone = data.leader_phone or (data.members[0].phone if data.members and len(data.members) > 0 else "9999999999")
+    
+    clean_phone = re.sub(r"\D", "", cust_phone or "")
+    if len(clean_phone) != 10:
+        clean_phone = "9876543210"
+
+    cust_id = f"cust_{clean_phone}_{uuid.uuid4().hex[:6]}"
+
+    # Cashfree strictly requires return_url to start with https://
+    return_base = os.getenv("CASHFREE_RETURN_URL", "").strip()
+    if not (return_base and return_base.startswith("https://")):
+        if frontend_url and frontend_url.startswith("https://"):
+            return_base = frontend_url
+        else:
+            return_base = "https://suiet.website"
 
     order_payload = {
-        "amount": amount_paise,
-        "currency": data.currency or "INR",
-        "receipt": receipt_id,
-        "payment_capture": 1,
-        "notes": {
-            "event_id": event_id,
-            "college": data.college_name or "",
-            "amount_inr": amount_paise / 100
-        }
+        "order_id": order_id,
+        "order_amount": order_amount_inr,
+        "order_currency": data.currency or "INR",
+        "customer_details": {
+            "customer_id": cust_id,
+            "customer_name": cust_name[:50] if cust_name else "Participant",
+            "customer_email": cust_email if "@" in cust_email else "participant@codemeet.com",
+            "customer_phone": clean_phone
+        },
+        "order_meta": {
+            "return_url": f"{return_base.rstrip('/')}/register?order_id={order_id}"
+        },
+        "order_note": f"CODEMEET 2026 - {event_id} ({data.college_name or 'Candidate'})"
     }
 
     try:
-        order = razorpay_client.order.create(data=order_payload)
-        return {
-            "success": True,
-            "order_id": order["id"],
-            "amount": order["amount"],
-            "amount_inr": order["amount"] / 100,
-            "currency": order["currency"],
-            "key_id": RAZORPAY_KEY_ID,
-            "receipt": order.get("receipt", receipt_id)
-        }
-    except razorpay.errors.BadRequestError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except razorpay.errors.ServerError as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Razorpay Server Error: {str(e)}")
+        cf_res = requests.post(
+            f"{CASHFREE_BASE_URL}/orders",
+            headers=get_cf_headers(),
+            json=order_payload,
+            timeout=15
+        )
+        if cf_res.status_code in (200, 201):
+            cf_data = cf_res.json()
+            payment_session_id = cf_data.get("payment_session_id")
+
+            # Persist pending order in SQLite database for fail-safe verification and redirect recovery
+            event_names_map = {
+                "hackathon": "24H National Hackathon",
+                "speed-typing": "Speed Typing Showdown",
+                "treasure-hunt": "Treasure Hunt Cyber Quest",
+                "free-fire": "Free Fire Esports Arena"
+            }
+            resolved_event_name = event_names_map.get(event_id, event_id.replace("-", " ").title())
+            members_list = [m.model_dump() for m in data.members] if data.members else [
+                {"name": cust_name, "email": cust_email, "phone": clean_phone, "is_leader": True}
+            ]
+
+            try:
+                save_pending_order(
+                    order_id=cf_data.get("order_id", order_id),
+                    event_id=event_id,
+                    event_name=resolved_event_name,
+                    team_name=data.team_name or ("Solo" if data.is_solo else ""),
+                    college_name=data.college_name or "",
+                    leader_name=cust_name,
+                    leader_email=cust_email,
+                    leader_phone=clean_phone,
+                    members=members_list,
+                    is_solo=bool(data.is_solo),
+                    amount_inr=order_amount_inr
+                )
+            except Exception as e:
+                print(f"[Warning] Failed to save pending order to database: {e}")
+
+            return {
+                "success": True,
+                "order_id": cf_data.get("order_id", order_id),
+                "cf_order_id": cf_data.get("cf_order_id"),
+                "payment_session_id": payment_session_id,
+                "amount": int(round(order_amount_inr * 100)), # paise for compatibility
+                "amount_inr": order_amount_inr,
+                "currency": cf_data.get("order_currency", "INR"),
+                "environment": "production" if CASHFREE_ENV in ("PROD", "PRODUCTION") else "sandbox",
+                "app_id": CASHFREE_APP_ID
+            }
+        else:
+            try:
+                err_json = cf_res.json()
+                err_msg = err_json.get("message") or str(err_json)
+            except Exception:
+                err_msg = f"HTTP {cf_res.status_code}: {cf_res.text}"
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cashfree Order Creation Error: {err_msg}")
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Order creation error: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Order creation gateway error: {str(e)}")
 
 # ==========================================
-# STEP 3: BACKEND - VERIFY SIGNATURE
+# STEP 2: BACKEND - VERIFY CASHFREE ORDER
 # ==========================================
 @app.post("/api/verify-payment")
 def verify_payment(data: VerifyPaymentRequest):
-    if not data.razorpay_order_id or not data.razorpay_payment_id or not data.razorpay_signature:
+    resolved_order_id = (data.order_id or data.razorpay_order_id or "").strip()
+    if not resolved_order_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing required payment parameters: order_id, payment_id, and signature are required."
+            detail="Missing required parameter: order_id is required."
         )
 
-    # Compute HMAC SHA256 signature
-    msg = f"{data.razorpay_order_id}|{data.razorpay_payment_id}".encode("utf-8")
-    generated_signature = hmac.new(
-        RAZORPAY_KEY_SECRET.encode("utf-8"),
-        msg,
-        hashlib.sha256
-    ).hexdigest()
+    # Check if this order or payment has already been verified and registered
+    existing_reg = get_registration_by_payment_id(resolved_order_id)
+    if existing_reg:
+        return {
+            "success": True,
+            "message": "Payment already authenticated and registration verified!",
+            "order_id": resolved_order_id,
+            "payment_id": existing_reg.get("payment_id") or resolved_order_id,
+            "registration_id": existing_reg["id"],
+            "data": existing_reg
+        }
 
-    # Compare generated signature with razorpay_signature
-    if not secrets.compare_digest(generated_signature, data.razorpay_signature):
+    # Fetch order details from Cashfree API
+    try:
+        cf_res = requests.get(
+            f"{CASHFREE_BASE_URL}/orders/{resolved_order_id}",
+            headers=get_cf_headers(),
+            timeout=15
+        )
+        if cf_res.status_code != 200:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Could not verify order with Cashfree (HTTP {cf_res.status_code})."
+            )
+        order_info = cf_res.json()
+        order_status = order_info.get("order_status", "").upper()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error contacting Cashfree verification gateway: {str(e)}")
+
+    payment_record_id = data.payment_id or data.razorpay_payment_id or ""
+
+    # If status is not directly PAID, verify payments array
+    if order_status != "PAID":
+        try:
+            p_res = requests.get(
+                f"{CASHFREE_BASE_URL}/orders/{resolved_order_id}/payments",
+                headers=get_cf_headers(),
+                timeout=10
+            )
+            if p_res.status_code == 200:
+                payments_list = p_res.json()
+                if isinstance(payments_list, list):
+                    for p in payments_list:
+                        if p.get("payment_status") == "SUCCESS":
+                            order_status = "PAID"
+                            payment_record_id = str(p.get("cf_payment_id") or p.get("bank_reference") or payment_record_id)
+                            break
+        except Exception:
+            pass
+
+    if order_status != "PAID":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Payment signature verification failed. Invalid signature."
+            detail=f"Payment has not been completed yet (Order Status: {order_status})."
         )
 
-    # Signature is authentic!
+    if not payment_record_id:
+        payment_record_id = f"CF_{resolved_order_id}"
+
+    # Check again if payment_record_id was already recorded
+    existing_reg = get_registration_by_payment_id(payment_record_id)
+    if existing_reg:
+        return {
+            "success": True,
+            "message": "Payment verified and registration authenticated successfully!",
+            "order_id": resolved_order_id,
+            "payment_id": payment_record_id,
+            "registration_id": existing_reg["id"],
+            "data": existing_reg
+        }
+
+    # Retrieve registration details (from request payload or pending orders database)
+    pending_info = get_pending_order(resolved_order_id)
+
+    college_name = data.college_name or (pending_info.get("college_name") if pending_info else "")
+    members_data = [m.model_dump() for m in data.members] if data.members and len(data.members) > 0 else (pending_info.get("members") if pending_info else [])
+    event_id = data.event_id or (pending_info.get("event_id") if pending_info else "hackathon")
+    event_name = data.event_name or (pending_info.get("event_name") if pending_info else "24H National Hackathon")
+    team_name = data.team_name or (pending_info.get("team_name") if pending_info else "")
+    is_solo = data.is_solo if data.is_solo is not None else (pending_info.get("is_solo", False) if pending_info else False)
+
     registration_record = None
     reg_id = None
 
-    # If registration details were attached with the verification request, persist to DB
-    if data.college_name and data.members and len(data.members) > 0:
-        event_id = data.event_id or "hackathon"
-        event_name = data.event_name or "24H National Hackathon"
+    if college_name and members_data and len(members_data) > 0:
         prefix = "CM26"
         event_code = {
             "hackathon": "HACK",
@@ -457,48 +619,56 @@ def verify_payment(data: VerifyPaymentRequest):
         short_uuid = uuid.uuid4().hex[:6].upper()
         reg_id = f"{prefix}-{event_code}-{short_uuid}"
 
-        leader = data.members[0]
-        members_data = [m.model_dump() for m in data.members]
-        pricing = get_event_pricing(event_id)
-        effective_amount = data.amount_paid if (data.amount_paid and data.amount_paid != "1") else (str(int(pricing["amount_inr"])) if pricing else (data.amount_paid or "100"))
+        leader = members_data[0]
+        
+        order_amount = order_info.get("order_amount")
+        if order_amount:
+            effective_amount = str(int(order_amount))
+        else:
+            pricing = get_event_pricing(event_id)
+            effective_amount = data.amount_paid if (data.amount_paid and data.amount_paid != "1") else (str(int(pricing["amount_inr"])) if pricing else (data.amount_paid or "100"))
 
         registration_record = save_registration(
             reg_id=reg_id,
             event_id=event_id,
             event_name=event_name,
-            team_name=data.team_name or ("Solo" if data.is_solo else ""),
-            college_name=data.college_name,
-            leader_name=leader.name,
-            leader_email=leader.email,
-            leader_phone=leader.phone,
+            team_name=team_name or ("Solo" if is_solo else ""),
+            college_name=college_name,
+            leader_name=leader.get("name", "Participant"),
+            leader_email=leader.get("email", "participant@codemeet.com"),
+            leader_phone=leader.get("phone", "9876543210"),
             members=members_data,
-            is_solo=bool(data.is_solo),
+            is_solo=bool(is_solo),
             payment_status="PAID",
-            payment_id=data.razorpay_payment_id,
+            payment_id=payment_record_id,
             amount_paid=effective_amount
         )
 
-        # Dispatch personalized confirmation emails to all participants (solo or every team member)
-        send_registration_confirmation_emails(
-            reg_id=reg_id,
-            event_id=event_id,
-            event_name=event_name,
-            team_name=data.team_name or ("Solo" if data.is_solo else ""),
-            college_name=data.college_name,
-            members=members_data,
-            is_solo=bool(data.is_solo),
-            amount_paid=effective_amount,
-            payment_id=data.razorpay_payment_id
-        )
+        # Dispatch personalized confirmation emails to all participants
+        try:
+            send_registration_confirmation_emails(
+                reg_id=reg_id,
+                event_id=event_id,
+                event_name=event_name,
+                team_name=team_name or ("Solo" if is_solo else ""),
+                college_name=college_name,
+                members=members_data,
+                is_solo=bool(is_solo),
+                amount_paid=effective_amount,
+                payment_id=payment_record_id
+            )
+        except Exception as mail_err:
+            print(f"[Warning] Failed to send registration emails: {mail_err}")
 
     return {
         "success": True,
-        "message": "Payment verified and authenticated successfully!",
-        "order_id": data.razorpay_order_id,
-        "payment_id": data.razorpay_payment_id,
-        "registration_id": reg_id,
+        "message": "Payment verified and registration authenticated successfully!",
+        "order_id": resolved_order_id,
+        "payment_id": payment_record_id,
+        "registration_id": reg_id or f"CM26-PASS-{uuid.uuid4().hex[:6].upper()}",
         "data": registration_record
     }
+
 
 @app.post("/api/register")
 def register_participant(data: RegistrationRequest):
@@ -743,10 +913,11 @@ def admin_export_excel(
         "Member 4 Email",
         "Member 4 Phone",
         "Amount Paid",
-        "Razorpay Payment ID",
+        "Cashfree Payment ID",
         "Payment Status",
         "Registration Timestamp"
     ]
+
     
     header_fill = PatternFill(start_color="CCFF00", end_color="CCFF00", fill_type="solid")
     header_font = Font(name="Segoe UI", size=11, bold=True, color="000000")

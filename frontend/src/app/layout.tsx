@@ -54,7 +54,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-[#050507] text-neutral-100 font-sans selection:bg-[#d4ff00] selection:text-black overflow-x-hidden">
         {children}
         <Script
-          src="https://checkout.razorpay.com/v1/checkout.js"
+          src="https://sdk.cashfree.com/js/v3/cashfree.js"
           strategy="lazyOnload"
         />
       </body>

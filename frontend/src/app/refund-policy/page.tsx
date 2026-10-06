@@ -57,7 +57,7 @@ export default function RefundPolicyPage() {
               <span className="text-amber-400">01.</span> Standard Non-Refundable Policy
             </h2>
             <p>
-              Once a payment has been successfully completed and confirmed via the Razorpay payment gateway, no refunds or voluntary cancellations will be entertained if a participant or team chooses to withdraw or fails to report at the venue.
+              Once a payment has been successfully completed and confirmed via the Cashfree payment gateway, no refunds or voluntary cancellations will be entertained if a participant or team chooses to withdraw or fails to report at the venue.
             </p>
           </section>
 
@@ -85,8 +85,8 @@ export default function RefundPolicyPage() {
             </p>
             <ul className="list-disc list-inside space-y-1.5 text-zinc-400">
               <li>The duplicate amount will be verified against our transaction ledger and refunded in full.</li>
-              <li>Please email our helpdesk at <a href="mailto:webflowcommunity@srinivasuniversity.edu.in" className="text-amber-400 underline">webflowcommunity@srinivasuniversity.edu.in</a> with your Razorpay Payment ID and bank statement snippet.</li>
-              <li>Authorized duplicate refunds will reflect in your source account within <strong>5–7 business days</strong> via Razorpay.</li>
+              <li>Please email our helpdesk at <a href="mailto:webflowcommunity@srinivasuniversity.edu.in" className="text-amber-400 underline">webflowcommunity@srinivasuniversity.edu.in</a> with your Cashfree Payment / Order ID and bank statement snippet.</li>
+              <li>Authorized duplicate refunds will reflect in your source account within <strong>5–7 business days</strong> via Cashfree Payments.</li>
             </ul>
           </section>
 

@@ -1,44 +1,65 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
+
 import { ArrowLeft, Building2, Trophy, Tag, Sparkles, CheckCircle2 } from "lucide-react";
 import { soundFX } from "@/lib/audio";
 
 export default function AboutPricingPage() {
+  const [pricings, setPricings] = useState<Record<string, { amount_inr: number }>>({});
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
+  useEffect(() => {
+    fetch(`${apiUrl}/api/events/pricing`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.pricing) {
+          setPricings(data.pricing);
+        }
+      })
+      .catch(() => {});
+  }, [apiUrl]);
+
   const eventsPricing = [
     {
+      id: "hackathon",
       name: "24H National Hackathon",
       category: "Academic Coding & Innovation Sprint",
       teamSize: "3 to 4 Members",
-      fee: "₹299 per team",
+      fee: `₹${pricings["hackathon"]?.amount_inr ?? 100} per team`,
       inclusions: "24H high-speed lab access, overnight mentoring, electricity, meal passes, delegate badge & certificate.",
       color: "#ccff00",
     },
     {
+      id: "speed-typing",
       name: "Speed Typing Showdown",
       category: "Keyboard Reflex & Syntax Blitz",
       teamSize: "Solo Participant (1P)",
-      fee: "₹99 per person",
+      fee: `₹${pricings["speed-typing"]?.amount_inr ?? 100} per person`,
       inclusions: "Dedicated mechanical keyboard terminal, software bench testing, digital certificate & trophy entry.",
       color: "#f59e0b",
     },
     {
+      id: "treasure-hunt",
       name: "Treasure Hunt Cyber Quest",
       category: "Campus Cipher & Cryptographic Quest",
       teamSize: "4 Members",
-      fee: "₹149 per team",
+      fee: `₹${pricings["treasure-hunt"]?.amount_inr ?? 200} per team`,
       inclusions: "Campus quest map, cipher kit, clue tracking badge, participation certificates.",
       color: "#00f0ff",
     },
     {
+      id: "free-fire",
       name: "Free Fire eSports Battle",
       category: "Student Tactical Gaming Arena",
       teamSize: "4 Members (Squad)",
-      fee: "₹199 per squad",
+      fee: `₹${pricings["free-fire"]?.amount_inr ?? 200} per squad`,
       inclusions: "Dedicated LAN router bandwidth, live stream projection, winner trophy entry & certificates.",
       color: "#ef4444",
     },
   ];
+
 
   return (
     <div className="min-h-screen bg-[#050507] text-white selection:bg-[#ccff00] selection:text-black">

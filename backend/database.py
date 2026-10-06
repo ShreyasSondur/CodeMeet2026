@@ -65,6 +65,23 @@ def init_db():
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS pending_orders (
+            order_id TEXT PRIMARY KEY,
+            event_id TEXT NOT NULL,
+            event_name TEXT NOT NULL,
+            team_name TEXT,
+            college_name TEXT NOT NULL,
+            leader_name TEXT NOT NULL,
+            leader_email TEXT NOT NULL,
+            leader_phone TEXT NOT NULL,
+            members_json TEXT NOT NULL,
+            is_solo INTEGER DEFAULT 0,
+            amount_inr REAL NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    """)
+
     # Seed default pricing if table is empty
     cursor.execute("SELECT COUNT(*) as cnt FROM event_pricing")
     count = cursor.fetchone()["cnt"]
@@ -231,6 +248,98 @@ def save_registration(
         "amount_paid": amount_paid or "1",
         "created_at": created_at
     }
+
+def save_pending_order(
+    order_id: str,
+    event_id: str,
+    event_name: str,
+    team_name: Optional[str],
+    college_name: str,
+    leader_name: str,
+    leader_email: str,
+    leader_phone: str,
+    members: List[Dict[str, Any]],
+    is_solo: bool,
+    amount_inr: float
+):
+    now = datetime.utcnow().isoformat() + "Z"
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO pending_orders (
+            order_id, event_id, event_name, team_name, college_name,
+            leader_name, leader_email, leader_phone, members_json,
+            is_solo, amount_inr, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(order_id) DO UPDATE SET
+            event_id=excluded.event_id,
+            event_name=excluded.event_name,
+            team_name=excluded.team_name,
+            college_name=excluded.college_name,
+            leader_name=excluded.leader_name,
+            leader_email=excluded.leader_email,
+            leader_phone=excluded.leader_phone,
+            members_json=excluded.members_json,
+            is_solo=excluded.is_solo,
+            amount_inr=excluded.amount_inr,
+            created_at=excluded.created_at
+    """, (
+        order_id, event_id, event_name, team_name or "", college_name or "",
+        leader_name or "", leader_email or "", leader_phone or "",
+        json.dumps(members or []), 1 if is_solo else 0, float(amount_inr), now
+    ))
+    conn.commit()
+    conn.close()
+
+def get_pending_order(order_id: str) -> Optional[Dict[str, Any]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM pending_orders WHERE order_id = ?", (order_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return {
+            "order_id": row["order_id"],
+            "event_id": row["event_id"],
+            "event_name": row["event_name"],
+            "team_name": row["team_name"],
+            "college_name": row["college_name"],
+            "leader_name": row["leader_name"],
+            "leader_email": row["leader_email"],
+            "leader_phone": row["leader_phone"],
+            "members": json.loads(row["members_json"]),
+            "is_solo": bool(row["is_solo"]),
+            "amount_inr": float(row["amount_inr"]),
+            "created_at": row["created_at"]
+        }
+    return None
+
+def get_registration_by_payment_id(payment_id: str) -> Optional[Dict[str, Any]]:
+    if not payment_id:
+        return None
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM registrations WHERE payment_id = ? OR id = ?", (payment_id, payment_id))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return {
+            "id": row["id"],
+            "event_id": row["event_id"],
+            "event_name": row["event_name"],
+            "team_name": row["team_name"],
+            "college_name": row["college_name"],
+            "leader_name": row["leader_name"],
+            "leader_email": row["leader_email"],
+            "leader_phone": row["leader_phone"],
+            "members": json.loads(row["members_json"]),
+            "is_solo": bool(row["is_solo"]),
+            "payment_status": row["payment_status"],
+            "payment_id": row["payment_id"],
+            "amount_paid": row["amount_paid"],
+            "created_at": row["created_at"]
+        }
+    return None
 
 def get_stats() -> Dict[str, Any]:
     conn = get_db_connection()

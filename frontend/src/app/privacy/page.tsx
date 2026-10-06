@@ -78,7 +78,7 @@ export default function PrivacyPage() {
               <span className="text-cyan-400">03.</span> Payment Gateway Security
             </h2>
             <p>
-              All financial transactions are handled directly through <strong>Razorpay</strong>, an RBI-authorized Payment Aggregator with 256-bit SSL encryption and PCI-DSS Level 1 certification. CODEMEET 2026 does not capture, process, or store credit/debit card numbers, CVVs, or UPI PINs.
+              All financial transactions are handled directly through <strong>Cashfree Payments</strong>, an RBI-authorized Payment Aggregator with 256-bit SSL encryption and PCI-DSS Level 1 certification. CODEMEET 2026 does not capture, process, or store credit/debit card numbers, CVVs, or UPI PINs.
             </p>
           </section>
 

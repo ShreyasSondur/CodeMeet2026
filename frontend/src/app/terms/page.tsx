@@ -85,7 +85,7 @@ export default function TermsPage() {
               <span className="text-[#ccff00]">04.</span> Payment &amp; Transaction Terms
             </h2>
             <p>
-              All entry fees are billed in Indian National Rupees (INR) and processed securely through RBI-compliant payment gateways (Razorpay). Successful completion of the payment generates an authentic Digital Entry ID and confirmation receipt delivered to registered email addresses.
+              All entry fees are billed in Indian National Rupees (INR) and processed securely through RBI-compliant payment gateways (Cashfree Payments). Successful completion of the payment generates an authentic Digital Entry ID and confirmation receipt delivered to registered email addresses.
             </p>
           </section>
 

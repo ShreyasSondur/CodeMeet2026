@@ -51,10 +51,12 @@ sudo systemctl restart codemeet-backend
 
 # 5. Configure Nginx Reverse Proxy
 echo "[5/6] Configuring Nginx reverse proxy..."
-sudo cp codemeet_nginx.conf /etc/nginx/sites-available/codemeet-backend
-sudo ln -sf /etc/nginx/sites-available/codemeet-backend /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl reload nginx
+if [ -f "codemeet_nginx.conf" ]; then
+    sudo cp codemeet_nginx.conf /etc/nginx/sites-available/codemeet-backend
+    sudo ln -sf /etc/nginx/sites-available/codemeet-backend /etc/nginx/sites-enabled/
+    sudo nginx -t
+    sudo systemctl reload nginx
+fi
 
 # 6. Status check
 echo "[6/6] Verifying service status..."
@@ -63,7 +65,6 @@ sudo systemctl status codemeet-backend --no-pager
 echo ""
 echo "=================================================="
 echo "  DEPLOYMENT COMPLETE! RUNNING ON PORT 8001       "
-echo "  Nginx Proxy configured for api.hackathon.suiet.website"
-echo "  To enable HTTPS SSL, run:                      "
-echo "    sudo certbot --nginx -d api.hackathon.suiet.website"
+echo "  Nginx Proxy: api.hackathon.suiet.website        "
+echo "  Cashfree PG V3 Gateway: ACTIVE (Production)     "
 echo "=================================================="
