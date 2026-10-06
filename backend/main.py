@@ -875,6 +875,36 @@ def admin_add_registration(data: RegistrationRequest, _: bool = Depends(verify_a
         "registration": reg
     }
 
+@app.post("/api/admin/registrations/{reg_id}/resend-email")
+def admin_resend_confirmation_email(reg_id: str, _: bool = Depends(verify_admin_auth)):
+    reg = get_registration_by_payment_id(reg_id)
+    if not reg:
+        raise HTTPException(status_code=404, detail="Registration record not found")
+
+    members_data = reg.get("members") or []
+    if not members_data:
+        leader_name = reg.get("leader_name") or "Participant"
+        leader_email = reg.get("leader_email") or ""
+        leader_phone = reg.get("leader_phone") or ""
+        members_data = [{"name": leader_name, "email": leader_email, "phone": leader_phone, "is_leader": True}]
+
+    send_registration_confirmation_emails(
+        reg_id=reg["id"],
+        event_id=reg.get("event_id", "hackathon"),
+        event_name=reg.get("event_name", "24H National Hackathon"),
+        team_name=reg.get("team_name", ""),
+        college_name=reg.get("college_name", ""),
+        members=members_data,
+        is_solo=bool(reg.get("is_solo", False)),
+        amount_paid=str(reg.get("amount_paid", "100")),
+        payment_id=reg.get("payment_id", "")
+    )
+
+    return {
+        "success": True,
+        "message": f"Confirmation email re-dispatched to {len(members_data)} participant(s) for {reg['id']}"
+    }
+
 @app.delete("/api/admin/registrations/{reg_id}")
 def admin_delete_registration(reg_id: str, _: bool = Depends(verify_admin_auth)):
     deleted = delete_registration(reg_id)
