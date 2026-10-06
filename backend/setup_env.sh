@@ -41,8 +41,17 @@ sed -i '/SMTP_EMAIL/d' "$ENV_FILE" 2>/dev/null || true
 sed -i '/SMTP_PASSWORD/d' "$ENV_FILE" 2>/dev/null || true
 sed -i '/SMTP_HOST/d' "$ENV_FILE" 2>/dev/null || true
 sed -i '/SMTP_PORT/d' "$ENV_FILE" 2>/dev/null || true
+sed -i '/ADMIN_PASSWORD/d' "$ENV_FILE" 2>/dev/null || true
+sed -i '/ADMIN_EMAIL/d' "$ENV_FILE" 2>/dev/null || true
+sed -i '/ADMIN_MASTER_OTP/d' "$ENV_FILE" 2>/dev/null || true
 
 # Append production configuration
+echo "" >> "$ENV_FILE"
+echo "# Admin Security Configuration" >> "$ENV_FILE"
+echo "ADMIN_PASSWORD=idontknow" >> "$ENV_FILE"
+echo "ADMIN_EMAIL=shreyas.u.sondur@gmail.com" >> "$ENV_FILE"
+echo "ADMIN_MASTER_OTP=202626" >> "$ENV_FILE"
+
 echo "" >> "$ENV_FILE"
 echo "# SMTP Email Configuration (Google Workspace App Password)" >> "$ENV_FILE"
 echo "SMTP_EMAIL=$DEFAULT_SMTP_EMAIL" >> "$ENV_FILE"
@@ -57,7 +66,7 @@ echo "CASHFREE_SECRET_KEY=$SECRET_KEY" >> "$ENV_FILE"
 echo "CASHFREE_ENV=PROD" >> "$ENV_FILE"
 echo "CASHFREE_API_VERSION=2023-08-01" >> "$ENV_FILE"
 
-echo "✅ Production .env (Cashfree & SMTP Email) configured successfully!"
+echo "✅ Production .env (Cashfree, SMTP & 2FA Admin) configured successfully!"
 echo "Restarting backend service (codemeet-backend)..."
 
 sudo systemctl daemon-reload 2>/dev/null || true

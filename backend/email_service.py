@@ -30,9 +30,9 @@ def get_smtp_config() -> Tuple[str, str, str, int]:
 def _dispatch_smtp_message(to_email: str, msg: MIMEMultipart) -> Tuple[bool, str]:
     smtp_email, smtp_password, smtp_host, smtp_port = get_smtp_config()
 
-    # Try 1: Port 587 with STARTTLS
+    # Try 1: Port 587 with STARTTLS (4 second timeout)
     try:
-        server = smtplib.SMTP(smtp_host, smtp_port, timeout=12)
+        server = smtplib.SMTP(smtp_host, smtp_port, timeout=4)
         server.ehlo()
         server.starttls()
         server.ehlo()
@@ -43,10 +43,10 @@ def _dispatch_smtp_message(to_email: str, msg: MIMEMultipart) -> Tuple[bool, str
     except Exception as err587:
         print(f"[SMTP Notice] Port 587 delivery failed ({err587}), attempting Port 465 SSL fallback...")
         
-        # Try 2: Port 465 with SSL
+        # Try 2: Port 465 with SSL (4 second timeout)
         try:
             context = ssl.create_default_context()
-            server_ssl = smtplib.SMTP_SSL(smtp_host, 465, context=context, timeout=12)
+            server_ssl = smtplib.SMTP_SSL(smtp_host, 465, context=context, timeout=4)
             server_ssl.login(smtp_email, smtp_password)
             server_ssl.sendmail(smtp_email, [to_email], msg.as_string())
             server_ssl.quit()
