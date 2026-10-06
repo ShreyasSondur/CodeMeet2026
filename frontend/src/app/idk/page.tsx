@@ -44,6 +44,12 @@ import {
   FileCheck,
   SlidersHorizontal,
   Save,
+  GraduationCap,
+  HeartPulse,
+  Radio,
+  Code2,
+  RotateCcw,
+  Edit3,
 } from "lucide-react";
 
 interface Member {
@@ -100,6 +106,61 @@ interface RulebookMeta {
   is_default: boolean;
 }
 
+interface AdminProblemStatement {
+  id: string;
+  problemNum: number;
+  label: string;
+  title: string;
+  category: string;
+  categoryKey: string;
+  shortDesc: string;
+  recommendedStack: string[];
+  impactScore: string;
+  updatedAt?: string;
+}
+
+const PROBLEM_STYLES: Record<number, {
+  color: string;
+  border: string;
+  glow: string;
+  badge: string;
+  tag: string;
+  icon: typeof Building2;
+}> = {
+  1: {
+    color: "#a855f7",
+    border: "border-purple-500/40",
+    glow: "rgba(168, 85, 247, 0.3)",
+    badge: "bg-purple-500/15 text-purple-300 border-purple-500/40",
+    tag: "CIVIC TECH & SMART CITY",
+    icon: Building2,
+  },
+  2: {
+    color: "#38bdf8",
+    border: "border-sky-500/40",
+    glow: "rgba(56, 189, 248, 0.3)",
+    badge: "bg-sky-500/15 text-sky-300 border-sky-500/40",
+    tag: "AI & ADAPTIVE EDTECH",
+    icon: GraduationCap,
+  },
+  3: {
+    color: "#f43f5e",
+    border: "border-rose-500/40",
+    glow: "rgba(244, 63, 94, 0.3)",
+    badge: "bg-rose-500/15 text-rose-300 border-rose-500/40",
+    tag: "HEALTHCARE AI & DIAGNOSTICS",
+    icon: HeartPulse,
+  },
+  4: {
+    color: "#ccff00",
+    border: "border-[#ccff00]/40",
+    glow: "rgba(204, 255, 0, 0.3)",
+    badge: "bg-[#ccff00]/15 text-[#ccff00] border-[#ccff00]/40",
+    tag: "DISASTER RELIEF & RESCUE TECH",
+    icon: Radio,
+  },
+};
+
 const EVENT_CONFIGS: Record<string, { name: string; tag: string; color: string; icon: any; isSolo: boolean; min: number; max: number }> = {
   hackathon: {
     name: "24H National Hackathon",
@@ -149,8 +210,8 @@ export default function AdminPage() {
   const [isLoadingAuth, setIsLoadingAuth] = useState(false);
   const [countdown, setCountdown] = useState(300);
 
-  // Navigation Tabs: 'registrations' | 'pricing' | 'rulebook'
-  const [adminTab, setAdminTab] = useState<"registrations" | "pricing" | "rulebook">("registrations");
+  // Navigation Tabs: 'registrations' | 'pricing' | 'rulebook' | 'problems'
+  const [adminTab, setAdminTab] = useState<"registrations" | "pricing" | "rulebook" | "problems">("registrations");
 
   const [stats, setStats] = useState<StatsData>({
     total: 0,
@@ -166,6 +227,20 @@ export default function AdminPage() {
   const [inputPrices, setInputPrices] = useState<Record<string, string>>({});
   const [isSavingPrice, setIsSavingPrice] = useState<Record<string, boolean>>({});
   const [priceNotice, setPriceNotice] = useState<Record<string, string>>({});
+
+  // Problem Statements Management States
+  const [adminProblems, setAdminProblems] = useState<AdminProblemStatement[]>([]);
+  const [editingProblems, setEditingProblems] = useState<Record<string, {
+    title: string;
+    category: string;
+    categoryKey: string;
+    shortDesc: string;
+    recommendedStack: string;
+    impactScore: string;
+  }>>({});
+  const [isSavingProblem, setIsSavingProblem] = useState<Record<string, boolean>>({});
+  const [problemNotices, setProblemNotices] = useState<Record<string, string>>({});
+  const [isResettingProblems, setIsResettingProblems] = useState(false);
 
   // Rulebook Management States
   const [rulebookMeta, setRulebookMeta] = useState<RulebookMeta>({
@@ -246,6 +321,7 @@ export default function AdminPage() {
       fetchRegistrations("all", savedToken);
       fetchPricingData();
       fetchRulebookMeta();
+      fetchProblemStatements();
     }
   }, []);
 
@@ -322,6 +398,7 @@ export default function AdminPage() {
         fetchRegistrations("all", data.token);
         fetchPricingData();
         fetchRulebookMeta();
+        fetchProblemStatements();
       } else {
         setAuthError(data.detail || "Invalid or Expired OTP code. Please retry.");
         soundFX.playClick();
@@ -539,6 +616,129 @@ export default function AdminPage() {
       setRulebookNotice("Error deleting rulebook.");
     } finally {
       setIsDeletingRulebook(false);
+    }
+  };
+
+  // Problem Statements Fetcher
+  const fetchProblemStatements = async () => {
+    try {
+      const res = await fetch(`${apiUrl}/api/problem-statements`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.problems && Array.isArray(data.problems)) {
+          setAdminProblems(data.problems);
+          const initialEditing: Record<string, {
+            title: string;
+            category: string;
+            categoryKey: string;
+            shortDesc: string;
+            recommendedStack: string;
+            impactScore: string;
+          }> = {};
+          data.problems.forEach((p: AdminProblemStatement) => {
+            initialEditing[p.id] = {
+              title: p.title,
+              category: p.category,
+              categoryKey: p.categoryKey,
+              shortDesc: p.shortDesc,
+              recommendedStack: Array.isArray(p.recommendedStack) ? p.recommendedStack.join(", ") : String(p.recommendedStack || ""),
+              impactScore: p.impactScore,
+            };
+          });
+          setEditingProblems(initialEditing);
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to fetch problem statements in admin:", err);
+    }
+  };
+
+  // Update Problem Statement in Backend
+  const handleSaveProblem = async (problemId: string) => {
+    soundFX.playClick();
+    const current = editingProblems[problemId];
+    if (!current || !current.title.trim()) {
+      setProblemNotices((prev) => ({ ...prev, [problemId]: "Title cannot be empty." }));
+      setTimeout(() => setProblemNotices((prev) => ({ ...prev, [problemId]: "" })), 3500);
+      return;
+    }
+
+    setIsSavingProblem((prev) => ({ ...prev, [problemId]: true }));
+    setProblemNotices((prev) => ({ ...prev, [problemId]: "" }));
+
+    const stackArray = current.recommendedStack
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    try {
+      const res = await fetch(`${apiUrl}/api/admin/problem-statements/${problemId}`, {
+        method: "PUT",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          title: current.title.trim(),
+          category: current.category.trim(),
+          category_key: current.categoryKey.trim(),
+          short_desc: current.shortDesc.trim(),
+          recommended_stack: stackArray,
+          impact_score: current.impactScore.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (res.status === 401) {
+        handleUnauthorized();
+        return;
+      }
+
+      if (res.ok && data.success) {
+        soundFX.playSuccess();
+        setAdminProblems((prev) =>
+          prev.map((p) => (p.id === problemId ? { ...p, ...data.problem } : p))
+        );
+        setProblemNotices((prev) => ({
+          ...prev,
+          [problemId]: `Success! ${data.problem.label || "Problem"} updated and published to landing page.`,
+        }));
+        setTimeout(() => setProblemNotices((prev) => ({ ...prev, [problemId]: "" })), 4500);
+      } else {
+        setProblemNotices((prev) => ({ ...prev, [problemId]: data.detail || "Failed to update problem statement." }));
+      }
+    } catch (err) {
+      setProblemNotices((prev) => ({ ...prev, [problemId]: "Network error updating problem statement." }));
+    } finally {
+      setIsSavingProblem((prev) => ({ ...prev, [problemId]: false }));
+    }
+  };
+
+  // Reset Problem Statements to System Defaults
+  const handleResetProblems = async () => {
+    if (!confirm("Are you sure you want to reset all 4 Problem Statements to their original system defaults?")) return;
+
+    soundFX.playClick();
+    setIsResettingProblems(true);
+
+    try {
+      const res = await fetch(`${apiUrl}/api/admin/problem-statements/reset`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+      });
+
+      const data = await res.json();
+      if (res.status === 401) {
+        handleUnauthorized();
+        return;
+      }
+
+      if (res.ok && data.success) {
+        soundFX.playSuccess();
+        fetchProblemStatements();
+        alert("All Problem Statements have been successfully reset to default!");
+      }
+    } catch (err) {
+      alert("Failed to reset problem statements.");
+    } finally {
+      setIsResettingProblems(false);
     }
   };
 
@@ -1022,6 +1222,25 @@ export default function AdminPage() {
             <span>03. RULEBOOK MANAGER</span>
             <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${rulebookMeta.exists ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40" : "bg-white/10 text-zinc-300"}`}>
               {rulebookMeta.exists ? "CUSTOM PDF ACTIVE" : "DEFAULT"}
+            </span>
+          </button>
+
+          <button
+            onClick={() => {
+              soundFX.playClick();
+              setAdminTab("problems");
+              fetchProblemStatements();
+            }}
+            className={`px-5 py-2.5 rounded-xl font-[family-name:var(--font-orbitron)] font-bold text-xs tracking-wider uppercase transition-all flex items-center gap-2.5 shrink-0 cursor-pointer ${
+              adminTab === "problems"
+                ? "bg-[#ccff00] text-black shadow-[0_0_20px_rgba(204,255,0,0.3)]"
+                : "bg-zinc-900 text-zinc-400 hover:text-white border border-white/10"
+            }`}
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>04. PROBLEM STATEMENTS</span>
+            <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${adminTab === "problems" ? "bg-black/20 text-black" : "bg-white/10 text-zinc-300"}`}>
+              {adminProblems.length || 4} ACTIVE
             </span>
           </button>
         </div>
@@ -1752,6 +1971,305 @@ export default function AdminPage() {
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ======================================================== */}
+        {/* TAB 4: PROBLEM STATEMENTS MANAGEMENT ENGINE             */}
+        {/* ======================================================== */}
+        {adminTab === "problems" && (
+          <div className="space-y-6 animate-in fade-in duration-300">
+            {/* Header Telemetry */}
+            <div className="p-6 rounded-3xl bg-zinc-950/80 border border-white/15 backdrop-blur-xl shadow-2xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-80 h-80 bg-purple-500/10 rounded-full blur-[100px] pointer-events-none" />
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
+                <div className="space-y-1 max-w-2xl">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-400 text-xs font-mono font-bold">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>24H HACKATHON ARENA MATRIX</span>
+                  </div>
+                  <h2 className="font-[family-name:var(--font-orbitron)] font-black text-2xl text-white">
+                    PROBLEM STATEMENTS MANAGER
+                  </h2>
+                  <p className="text-xs text-zinc-400 font-mono leading-relaxed">
+                    Live editor for all 4 Hackathon Problem Statements. Any changes saved here are stored in the database and immediately reflected in real-time across the main portal (<strong className="text-[#ccff00]">/#problems</strong>).
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <button
+                    onClick={() => {
+                      soundFX.playClick();
+                      fetchProblemStatements();
+                    }}
+                    className="px-4 py-2.5 rounded-xl bg-zinc-900 border border-white/15 hover:border-purple-400 text-xs font-mono text-zinc-300 hover:text-white flex items-center gap-2 transition-all cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 text-purple-400" />
+                    <span>Refresh</span>
+                  </button>
+
+                  <button
+                    onClick={handleResetProblems}
+                    disabled={isResettingProblems}
+                    className="px-4 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-xs font-mono font-bold flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <RotateCcw className={`w-3.5 h-3.5 ${isResettingProblems ? "animate-spin" : ""}`} />
+                    <span>Reset Defaults</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* 4 Problem Cards Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {[1, 2, 3, 4].map((pNum) => {
+                const pId = `problem-${pNum}`;
+                const rawProb = adminProblems.find((p) => p.id === pId || p.problemNum === pNum);
+                const editState = editingProblems[pId] || {
+                  title: rawProb?.title || `Problem ${pNum}`,
+                  category: rawProb?.category || "TRACK",
+                  categoryKey: rawProb?.categoryKey || "civic",
+                  shortDesc: rawProb?.shortDesc || "",
+                  recommendedStack: Array.isArray(rawProb?.recommendedStack) ? rawProb.recommendedStack.join(", ") : "",
+                  impactScore: rawProb?.impactScore || "High Impact",
+                };
+                const styleCfg = PROBLEM_STYLES[pNum] || PROBLEM_STYLES[1];
+                const ProbIcon = styleCfg.icon;
+                const isSaving = Boolean(isSavingProblem[pId]);
+                const notice = problemNotices[pId];
+
+                return (
+                  <div
+                    key={pId}
+                    className="p-6 sm:p-7 rounded-3xl bg-zinc-950/90 border border-white/10 backdrop-blur-xl shadow-xl flex flex-col justify-between space-y-6 relative overflow-hidden transition-all duration-300 hover:border-white/20"
+                  >
+                    {/* Ambient corner glow */}
+                    <div
+                      className="absolute -top-12 -right-12 w-44 h-44 rounded-full blur-[80px] pointer-events-none opacity-20"
+                      style={{ backgroundColor: styleCfg.color }}
+                    />
+
+                    <div className="space-y-5 relative z-10">
+                      {/* Top Card Header */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="w-10 h-10 rounded-xl flex items-center justify-center border"
+                            style={{
+                              backgroundColor: `${styleCfg.color}15`,
+                              borderColor: `${styleCfg.color}40`,
+                              color: styleCfg.color,
+                            }}
+                          >
+                            <ProbIcon className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <span
+                              className="text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded border"
+                              style={{
+                                backgroundColor: `${styleCfg.color}10`,
+                                borderColor: `${styleCfg.color}30`,
+                                color: styleCfg.color,
+                              }}
+                            >
+                              PROBLEM 0{pNum} // {editState.category || styleCfg.tag}
+                            </span>
+                            <h3 className="font-[family-name:var(--font-orbitron)] font-bold text-base text-white mt-1">
+                              Problem Statement #{pNum}
+                            </h3>
+                          </div>
+                        </div>
+
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/5 border border-white/10 text-zinc-400">
+                          {pId}
+                        </span>
+                      </div>
+
+                      {/* Title Field */}
+                      <div>
+                        <label className="block text-[11px] font-mono text-zinc-300 uppercase font-bold mb-1.5">
+                          Problem Title *
+                        </label>
+                        <input
+                          type="text"
+                          value={editState.title}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setEditingProblems((prev) => ({
+                              ...prev,
+                              [pId]: { ...editState, title: val },
+                            }));
+                          }}
+                          placeholder="e.g. Smart Civic Issue Reporting"
+                          className="w-full px-4 py-2.5 rounded-xl bg-black/80 border border-white/15 focus:border-white/40 focus:ring-1 text-sm font-bold text-white outline-none transition-all"
+                          style={{
+                            caretColor: styleCfg.color,
+                          }}
+                        />
+                      </div>
+
+                      {/* Category & Filter Key Row */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-mono text-zinc-300 uppercase font-bold mb-1.5">
+                            Category Label *
+                          </label>
+                          <input
+                            type="text"
+                            value={editState.category}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setEditingProblems((prev) => ({
+                                ...prev,
+                                [pId]: { ...editState, category: val },
+                              }));
+                            }}
+                            placeholder="e.g. CIVIC TECH"
+                            className="w-full px-4 py-2.5 rounded-xl bg-black/80 border border-white/15 text-xs font-mono font-bold text-zinc-200 outline-none transition-all"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-mono text-zinc-300 uppercase font-bold mb-1.5">
+                            Track Filter Tab *
+                          </label>
+                          <select
+                            value={editState.categoryKey}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setEditingProblems((prev) => ({
+                                ...prev,
+                                [pId]: { ...editState, categoryKey: val },
+                              }));
+                            }}
+                            className="w-full px-4 py-2.5 rounded-xl bg-black/80 border border-white/15 text-xs font-mono text-zinc-200 outline-none cursor-pointer"
+                          >
+                            <option value="civic">CIVIC TECH (civic)</option>
+                            <option value="edtech">AI & EDTECH (edtech)</option>
+                            <option value="health">HEALTHCARE AI (health)</option>
+                            <option value="disaster">DISASTER RESPONSE (disaster)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Problem Description Textarea */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="text-[11px] font-mono text-zinc-300 uppercase font-bold">
+                            Problem Statement Description / Context *
+                          </label>
+                          <span className="text-[10px] font-mono text-zinc-500">
+                            {editState.shortDesc.length} characters
+                          </span>
+                        </div>
+                        <textarea
+                          rows={4}
+                          value={editState.shortDesc}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setEditingProblems((prev) => ({
+                              ...prev,
+                              [pId]: { ...editState, shortDesc: val },
+                            }));
+                          }}
+                          placeholder="Describe the challenge, user friction, real-world context, and requirements..."
+                          className="w-full px-4 py-3 rounded-xl bg-black/80 border border-white/15 focus:border-white/40 text-xs font-mono text-zinc-300 leading-relaxed outline-none transition-all resize-y"
+                        />
+                      </div>
+
+                      {/* Tech Stack & Impact Row */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-mono text-zinc-300 uppercase font-bold mb-1.5">
+                            Recommended Stack (Comma Separated)
+                          </label>
+                          <input
+                            type="text"
+                            value={editState.recommendedStack}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setEditingProblems((prev) => ({
+                                ...prev,
+                                [pId]: { ...editState, recommendedStack: val },
+                              }));
+                            }}
+                            placeholder="Next.js, Computer Vision, PostGIS"
+                            className="w-full px-4 py-2.5 rounded-xl bg-black/80 border border-white/15 text-xs font-mono text-zinc-300 outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-mono text-zinc-300 uppercase font-bold mb-1.5">
+                            Impact Badge / Scope
+                          </label>
+                          <input
+                            type="text"
+                            value={editState.impactScore}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setEditingProblems((prev) => ({
+                                ...prev,
+                                [pId]: { ...editState, impactScore: val },
+                              }));
+                            }}
+                            placeholder="e.g. High Municipal Impact"
+                            className="w-full px-4 py-2.5 rounded-xl bg-black/80 border border-white/15 text-xs font-mono text-zinc-300 outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Notice Message */}
+                      {notice && (
+                        <div
+                          className={`p-3 rounded-xl font-mono text-xs border flex items-center gap-2 animate-in fade-in duration-200 ${
+                            notice.startsWith("Success")
+                              ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
+                              : "bg-red-500/15 border-red-500/40 text-red-300"
+                          }`}
+                        >
+                          {notice.startsWith("Success") ? (
+                            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                          ) : (
+                            <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+                          )}
+                          <span>{notice}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Footer Action Bar */}
+                    <div className="pt-4 border-t border-white/10 flex items-center justify-between relative z-10">
+                      <div className="text-[10px] font-mono text-zinc-500">
+                        {rawProb?.updatedAt
+                          ? `Last modified ${new Date(rawProb.updatedAt).toLocaleTimeString()}`
+                          : "System Baseline"}
+                      </div>
+
+                      <button
+                        onClick={() => handleSaveProblem(pId)}
+                        disabled={isSaving}
+                        className="px-6 py-2.5 rounded-xl text-black font-[family-name:var(--font-orbitron)] font-bold text-xs uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer shadow-[0_0_15px_rgba(204,255,0,0.2)] disabled:opacity-50"
+                        style={{
+                          backgroundColor: styleCfg.color,
+                        }}
+                      >
+                        {isSaving ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin text-black" />
+                            <span>SAVING...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Save className="w-3.5 h-3.5 text-black" />
+                            <span>SAVE & PUBLISH #{pNum}</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

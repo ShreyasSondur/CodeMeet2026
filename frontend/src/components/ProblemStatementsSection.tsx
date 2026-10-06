@@ -421,14 +421,53 @@ function ParticleCanvas() {
 // Master Problem Statements Section
 export default function ProblemStatementsSection() {
   const [selectedFilter, setSelectedFilter] = useState<"all" | "civic" | "edtech" | "health" | "disaster">("all");
+  const [problems, setProblems] = useState<ProblemStatement[]>(problemStatementsData);
+
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
+  // Fetch live updated problem statements from backend API
+  useEffect(() => {
+    const fetchProblems = async () => {
+      try {
+        const res = await fetch(`${apiUrl}/api/problem-statements`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.problems && Array.isArray(data.problems) && data.problems.length > 0) {
+            const enriched: ProblemStatement[] = data.problems.map((p: any) => {
+              const num = p.problemNum || parseInt(p.id?.replace("problem-", "") || "1") || 1;
+              const fallback = problemStatementsData.find((orig) => orig.id === p.id) || problemStatementsData[num - 1] || problemStatementsData[0];
+              return {
+                id: p.id || `problem-${num}`,
+                problemNum: num,
+                label: p.label || `Problem ${num}`,
+                title: p.title || fallback.title,
+                category: p.category || fallback.category,
+                categoryKey: (p.categoryKey || fallback.categoryKey) as any,
+                shortDesc: p.shortDesc || fallback.shortDesc,
+                recommendedStack: Array.isArray(p.recommendedStack) ? p.recommendedStack : fallback.recommendedStack,
+                impactScore: p.impactScore || fallback.impactScore,
+                icon: fallback.icon,
+                themeColor: fallback.themeColor,
+              };
+            });
+            setProblems(enriched);
+          }
+        }
+      } catch (err) {
+        // Fallback to static data on error
+        console.warn("Could not fetch live problem statements from backend:", err);
+      }
+    };
+    fetchProblems();
+  }, [apiUrl]);
 
   const filteredProblems =
     selectedFilter === "all"
-      ? problemStatementsData
-      : problemStatementsData.filter((p) => p.categoryKey === selectedFilter);
+      ? problems
+      : problems.filter((p) => p.categoryKey === selectedFilter);
 
   const filterTabs = [
-    { key: "all", label: "ALL TRACKS (4)" },
+    { key: "all", label: `ALL TRACKS (${problems.length})` },
     { key: "civic", label: "CIVIC TECH" },
     { key: "edtech", label: "AI & EDTECH" },
     { key: "health", label: "HEALTHCARE AI" },

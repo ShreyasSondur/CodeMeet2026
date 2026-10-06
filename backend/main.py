@@ -11,7 +11,7 @@ import hashlib
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 import json
-from fastapi import FastAPI, HTTPException, Header, Depends, Query, status, File, UploadFile
+from fastapi import FastAPI, HTTPException, Header, Depends, Query, status, File, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from pydantic import BaseModel, EmailStr, field_validator
@@ -36,7 +36,11 @@ from database import (
     clear_admin_otp,
     save_pending_order,
     get_pending_order,
-    get_registration_by_payment_id
+    get_registration_by_payment_id,
+    get_problem_statements,
+    get_problem_statement,
+    update_problem_statement,
+    reset_problem_statements
 )
 from email_service import send_admin_otp_email, send_registration_confirmation_emails
 
@@ -169,6 +173,14 @@ class UpdateEventPricingRequest(BaseModel):
     event_id: str
     amount_inr: float
 
+class UpdateProblemStatementRequest(BaseModel):
+    title: str
+    category: str
+    category_key: str
+    short_desc: str
+    recommended_stack: List[str]
+    impact_score: str
+
 class VerifyPaymentRequest(BaseModel):
     order_id: Optional[str] = None
     razorpay_order_id: Optional[str] = None  # fallback backward compatibility
@@ -264,6 +276,69 @@ def admin_update_pricing(
         "success": True,
         "message": f"Entry fee for {updated['event_name']} updated to ₹{updated['amount_inr']:.2f}",
         "pricing": updated
+    }
+
+# ==========================================
+# PROBLEM STATEMENTS ENDPOINTS
+# ==========================================
+@app.get("/api/problem-statements")
+def get_all_problem_statements():
+    """Public endpoint to fetch all live problem statements"""
+    problems = get_problem_statements()
+    return {
+        "success": True,
+        "problems": problems
+    }
+
+@app.get("/api/problem-statements/{problem_id}")
+def get_single_problem_statement(problem_id: str):
+    """Public endpoint to fetch a single problem statement by ID"""
+    problem = get_problem_statement(problem_id)
+    if not problem:
+        raise HTTPException(status_code=404, detail="Problem statement not found")
+    return {
+        "success": True,
+        "problem": problem
+    }
+
+@app.put("/api/admin/problem-statements/{problem_id}")
+def admin_update_problem_statement(
+    problem_id: str,
+    data: UpdateProblemStatementRequest,
+    authorized: bool = Depends(verify_admin_auth)
+):
+    """Admin endpoint to update a problem statement (Protected by 2FA)"""
+    if not data.title.strip():
+        raise HTTPException(status_code=400, detail="Problem title cannot be empty")
+    
+    updated = update_problem_statement(
+        problem_id=problem_id,
+        title=data.title,
+        category=data.category,
+        category_key=data.category_key,
+        short_desc=data.short_desc,
+        recommended_stack=data.recommended_stack,
+        impact_score=data.impact_score
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Problem statement not found to update")
+    
+    return {
+        "success": True,
+        "message": f"Problem statement '{updated['title']}' updated successfully!",
+        "problem": updated
+    }
+
+@app.post("/api/admin/problem-statements/reset")
+def admin_reset_problem_statements_endpoint(
+    authorized: bool = Depends(verify_admin_auth)
+):
+    """Admin endpoint to reset all problem statements to default (Protected by 2FA)"""
+    problems = reset_problem_statements()
+    return {
+        "success": True,
+        "message": "Problem statements reset to default successfully!",
+        "problems": problems
     }
 
 # ==========================================
@@ -514,8 +589,147 @@ def create_order(data: CreateOrderRequest):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Order creation gateway error: {str(e)}")
 
 # ==========================================
-# STEP 2: BACKEND - VERIFY CASHFREE ORDER
+# STEP 2: BACKEND - VERIFY & PERSIST REGISTRATION
 # ==========================================
+def _process_successful_payment(
+    resolved_order_id: str,
+    payment_record_id: str,
+    order_info: Optional[Dict[str, Any]] = None,
+    req_data: Optional[VerifyPaymentRequest] = None
+) -> Dict[str, Any]:
+    """
+    Guaranteed registration persistence & email dispatch logic.
+    Works seamlessly whether triggered by user redirect, polling, or Cashfree webhook.
+    """
+    # 1. Check if already recorded
+    existing_reg = (
+        get_registration_by_payment_id(resolved_order_id) or
+        get_registration_by_payment_id(payment_record_id) or
+        get_registration_by_payment_id(f"CF_{resolved_order_id}")
+    )
+    if existing_reg:
+        return existing_reg
+
+    # 2. Fetch pending order information
+    pending_info = get_pending_order(resolved_order_id) or {}
+
+    # Extract customer info from Cashfree order details if present
+    cust_info = (order_info.get("customer_details") if order_info else {}) or {}
+    cust_name = cust_info.get("customer_name") or "Participant"
+    cust_email = cust_info.get("customer_email") or "participant@codemeet.com"
+    cust_phone = cust_info.get("customer_phone") or "9876543210"
+
+    # Merge college name
+    college_name = (
+        (req_data.college_name.strip() if req_data and req_data.college_name else "") or
+        (pending_info.get("college_name") or "").strip() or
+        "Participant Institution"
+    )
+
+    # Merge members data
+    members_data: List[Dict[str, Any]] = []
+    if req_data and req_data.members and len(req_data.members) > 0:
+        members_data = [m.model_dump() for m in req_data.members]
+    elif pending_info.get("members") and len(pending_info.get("members")) > 0:
+        members_data = pending_info.get("members")
+    else:
+        members_data = [{
+            "name": pending_info.get("leader_name") or cust_name,
+            "email": pending_info.get("leader_email") or cust_email,
+            "phone": pending_info.get("leader_phone") or cust_phone,
+            "is_leader": True
+        }]
+
+    # Merge event metadata
+    event_id = (
+        (req_data.event_id if req_data and req_data.event_id else "") or
+        pending_info.get("event_id") or
+        "hackathon"
+    )
+
+    event_names_map = {
+        "hackathon": "24H National Hackathon",
+        "speed-typing": "Speed Typing Showdown",
+        "treasure-hunt": "Treasure Hunt Cyber Quest",
+        "free-fire": "Free Fire Esports Arena"
+    }
+    event_name = (
+        (req_data.event_name if req_data and req_data.event_name else "") or
+        pending_info.get("event_name") or
+        event_names_map.get(event_id, event_id.replace("-", " ").title())
+    )
+
+    team_name = (
+        (req_data.team_name if req_data and req_data.team_name else "") or
+        pending_info.get("team_name") or
+        ""
+    )
+
+    is_solo = req_data.is_solo if (req_data and req_data.is_solo is not None) else pending_info.get("is_solo", False)
+
+    # Generate unique ID
+    prefix = "CM26"
+    event_code = {
+        "hackathon": "HACK",
+        "speed-typing": "TYPE",
+        "treasure-hunt": "HUNT",
+        "free-fire": "FIRE"
+    }.get(event_id, "PASS")
+    
+    short_uuid = uuid.uuid4().hex[:6].upper()
+    reg_id = f"{prefix}-{event_code}-{short_uuid}"
+
+    leader = members_data[0] if members_data else {
+        "name": cust_name,
+        "email": cust_email,
+        "phone": cust_phone
+    }
+
+    # Resolve amount paid
+    order_amount = order_info.get("order_amount") if order_info else None
+    if order_amount:
+        effective_amount = str(int(order_amount))
+    elif pending_info.get("amount_inr"):
+        effective_amount = str(int(pending_info["amount_inr"]))
+    else:
+        pricing = get_event_pricing(event_id)
+        effective_amount = str(int(pricing["amount_inr"])) if pricing else (req_data.amount_paid if req_data else "100")
+
+    saved_rec = save_registration(
+        reg_id=reg_id,
+        event_id=event_id,
+        event_name=event_name,
+        team_name=team_name or ("Solo" if is_solo else ""),
+        college_name=college_name,
+        leader_name=leader.get("name") or cust_name,
+        leader_email=leader.get("email") or cust_email,
+        leader_phone=leader.get("phone") or cust_phone,
+        members=members_data,
+        is_solo=bool(is_solo),
+        payment_status="PAID",
+        payment_id=payment_record_id or resolved_order_id,
+        amount_paid=effective_amount or "100"
+    )
+
+    # Dispatch confirmation emails to all participants
+    try:
+        send_registration_confirmation_emails(
+            reg_id=reg_id,
+            event_id=event_id,
+            event_name=event_name,
+            team_name=team_name or ("Solo" if is_solo else ""),
+            college_name=college_name,
+            members=members_data,
+            is_solo=bool(is_solo),
+            amount_paid=effective_amount or "100",
+            payment_id=payment_record_id or resolved_order_id
+        )
+    except Exception as mail_err:
+        print(f"[Warning] Failed to send registration emails: {mail_err}")
+
+    return saved_rec
+
+
 @app.post("/api/verify-payment")
 def verify_payment(data: VerifyPaymentRequest):
     resolved_order_id = (data.order_id or data.razorpay_order_id or "").strip()
@@ -526,7 +740,11 @@ def verify_payment(data: VerifyPaymentRequest):
         )
 
     # Check if this order or payment has already been verified and registered
-    existing_reg = get_registration_by_payment_id(resolved_order_id)
+    existing_reg = (
+        get_registration_by_payment_id(resolved_order_id) or
+        (get_registration_by_payment_id(data.payment_id) if data.payment_id else None) or
+        get_registration_by_payment_id(f"CF_{resolved_order_id}")
+    )
     if existing_reg:
         return {
             "success": True,
@@ -586,92 +804,64 @@ def verify_payment(data: VerifyPaymentRequest):
     if not payment_record_id:
         payment_record_id = f"CF_{resolved_order_id}"
 
-    # Check again if payment_record_id was already recorded
-    existing_reg = get_registration_by_payment_id(payment_record_id)
-    if existing_reg:
-        return {
-            "success": True,
-            "message": "Payment verified and registration authenticated successfully!",
-            "order_id": resolved_order_id,
-            "payment_id": payment_record_id,
-            "registration_id": existing_reg["id"],
-            "data": existing_reg
-        }
-
-    # Retrieve registration details (from request payload or pending orders database)
-    pending_info = get_pending_order(resolved_order_id)
-
-    college_name = data.college_name or (pending_info.get("college_name") if pending_info else "")
-    members_data = [m.model_dump() for m in data.members] if data.members and len(data.members) > 0 else (pending_info.get("members") if pending_info else [])
-    event_id = data.event_id or (pending_info.get("event_id") if pending_info else "hackathon")
-    event_name = data.event_name or (pending_info.get("event_name") if pending_info else "24H National Hackathon")
-    team_name = data.team_name or (pending_info.get("team_name") if pending_info else "")
-    is_solo = data.is_solo if data.is_solo is not None else (pending_info.get("is_solo", False) if pending_info else False)
-
-    registration_record = None
-    reg_id = None
-
-    if college_name and members_data and len(members_data) > 0:
-        prefix = "CM26"
-        event_code = {
-            "hackathon": "HACK",
-            "speed-typing": "TYPE",
-            "treasure-hunt": "HUNT",
-            "free-fire": "FIRE"
-        }.get(event_id, "PASS")
-        
-        short_uuid = uuid.uuid4().hex[:6].upper()
-        reg_id = f"{prefix}-{event_code}-{short_uuid}"
-
-        leader = members_data[0]
-        
-        order_amount = order_info.get("order_amount")
-        if order_amount:
-            effective_amount = str(int(order_amount))
-        else:
-            pricing = get_event_pricing(event_id)
-            effective_amount = data.amount_paid if (data.amount_paid and data.amount_paid != "1") else (str(int(pricing["amount_inr"])) if pricing else (data.amount_paid or "100"))
-
-        registration_record = save_registration(
-            reg_id=reg_id,
-            event_id=event_id,
-            event_name=event_name,
-            team_name=team_name or ("Solo" if is_solo else ""),
-            college_name=college_name,
-            leader_name=leader.get("name", "Participant"),
-            leader_email=leader.get("email", "participant@codemeet.com"),
-            leader_phone=leader.get("phone", "9876543210"),
-            members=members_data,
-            is_solo=bool(is_solo),
-            payment_status="PAID",
-            payment_id=payment_record_id,
-            amount_paid=effective_amount
-        )
-
-        # Dispatch personalized confirmation emails to all participants
-        try:
-            send_registration_confirmation_emails(
-                reg_id=reg_id,
-                event_id=event_id,
-                event_name=event_name,
-                team_name=team_name or ("Solo" if is_solo else ""),
-                college_name=college_name,
-                members=members_data,
-                is_solo=bool(is_solo),
-                amount_paid=effective_amount,
-                payment_id=payment_record_id
-            )
-        except Exception as mail_err:
-            print(f"[Warning] Failed to send registration emails: {mail_err}")
+    # Guaranteed registration save and email dispatch
+    registration_record = _process_successful_payment(
+        resolved_order_id=resolved_order_id,
+        payment_record_id=payment_record_id,
+        order_info=order_info,
+        req_data=data
+    )
 
     return {
         "success": True,
         "message": "Payment verified and registration authenticated successfully!",
         "order_id": resolved_order_id,
         "payment_id": payment_record_id,
-        "registration_id": reg_id or f"CM26-PASS-{uuid.uuid4().hex[:6].upper()}",
+        "registration_id": registration_record["id"],
         "data": registration_record
     }
+
+
+# ==========================================
+# STEP 3: BACKEND - CASHFREE WEBHOOK LISTENER
+# ==========================================
+@app.post("/api/payment/webhook")
+@app.post("/api/cashfree-webhook")
+async def cashfree_payment_webhook(request: Request):
+    """
+    Cashfree Webhook listener for asynchronous payment events.
+    Ensures payment is recorded and emails dispatched even if user closes the browser tab.
+    """
+    try:
+        body_bytes = await request.body()
+        payload = json.loads(body_bytes.decode("utf-8")) if body_bytes else {}
+    except Exception:
+        payload = {}
+
+    order_data = payload.get("data", {}).get("order", {}) or payload.get("order", {}) or payload
+    payment_data = payload.get("data", {}).get("payment", {}) or payload.get("payment", {})
+    
+    order_id = order_data.get("order_id") or payload.get("data", {}).get("order_id") or payload.get("order_id")
+    order_status = (order_data.get("order_status") or payload.get("type") or "").upper()
+    payment_status = (payment_data.get("payment_status") or "").upper()
+    payment_id = payment_data.get("cf_payment_id") or payment_data.get("payment_id") or f"CF_{order_id}"
+
+    if not order_id:
+        return JSONResponse(status_code=200, content={"status": "IGNORED", "message": "No order_id in payload"})
+
+    if "SUCCESS" in order_status or "PAID" in order_status or payment_status == "SUCCESS" or "PAYMENT_SUCCESS" in order_status:
+        try:
+            reg_record = _process_successful_payment(
+                resolved_order_id=order_id,
+                payment_record_id=str(payment_id),
+                order_info=order_data
+            )
+            return JSONResponse(status_code=200, content={"status": "PROCESSED", "registration_id": reg_record.get("id")})
+        except Exception as e:
+            print(f"[Webhook Error] {e}")
+            return JSONResponse(status_code=200, content={"status": "ERROR", "detail": str(e)})
+
+    return JSONResponse(status_code=200, content={"status": "OK", "message": "Webhook processed"})
 
 
 @app.post("/api/register")

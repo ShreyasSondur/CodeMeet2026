@@ -82,6 +82,21 @@ def init_db():
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS problem_statements (
+            id TEXT PRIMARY KEY,
+            problem_num INTEGER NOT NULL,
+            label TEXT NOT NULL,
+            title TEXT NOT NULL,
+            category TEXT NOT NULL,
+            category_key TEXT NOT NULL,
+            short_desc TEXT NOT NULL,
+            recommended_stack_json TEXT NOT NULL,
+            impact_score TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+
     # Seed default pricing if table is empty
     cursor.execute("SELECT COUNT(*) as cnt FROM event_pricing")
     count = cursor.fetchone()["cnt"]
@@ -98,6 +113,68 @@ def init_db():
                 "INSERT INTO event_pricing (event_id, event_name, amount_inr, amount_paise, currency, updated_at) VALUES (?, ?, ?, ?, 'INR', ?)",
                 (eid, name, inr, paise, now)
             )
+
+    # Seed default problem statements if table is empty
+    cursor.execute("SELECT COUNT(*) as cnt FROM problem_statements")
+    ps_count = cursor.fetchone()["cnt"]
+    if ps_count == 0:
+        default_problems = [
+            (
+                "problem-1",
+                1,
+                "Problem 1",
+                "Smart Civic Issue Reporting",
+                "CIVIC TECH",
+                "civic",
+                "Local issues like potholes, garbage, and broken streetlights often go unaddressed due to lack of visibility and feedback. There is a need for a transparent platform where citizens can report such problems, track their status, and help authorities prioritize them.",
+                json.dumps(["Next.js", "Computer Vision", "Geolocation", "PostGIS"]),
+                "High Municipal Impact",
+                datetime.utcnow().isoformat() + "Z"
+            ),
+            (
+                "problem-2",
+                2,
+                "Problem 2",
+                "Personalized Learning Assistant",
+                "AI & EDTECH",
+                "edtech",
+                "Students face challenges because one-size-fits-all teaching does not match their individual strengths and weaknesses. There is a need for an intelligent assistant that adapts to learners, providing tailored study plans and real-time feedback.",
+                json.dumps(["React 19", "LLM Agents", "Knowledge Graphs", "Speech AI"]),
+                "Global EdTech Shift",
+                datetime.utcnow().isoformat() + "Z"
+            ),
+            (
+                "problem-3",
+                3,
+                "Problem 3",
+                "AI for Early Disease Detection",
+                "HEALTHCARE AI",
+                "health",
+                "Critical illnesses often go undiagnosed until too late, due to limited resources and delays in analysis. There is a need for AI-based solutions that can detect diseases early from minimal patient data or imaging, enabling faster and more accurate diagnosis.",
+                json.dumps(["PyTorch", "Medical CNNs", "Edge AI", "DICOM"]),
+                "Life-Saving Potential",
+                datetime.utcnow().isoformat() + "Z"
+            ),
+            (
+                "problem-4",
+                4,
+                "Problem 4",
+                "Smart Disaster Response Platform",
+                "DISASTER RESPONSE",
+                "disaster",
+                "During floods, landslides, and urban disasters, victims and responders struggle with poor coordination and slow resource allocation. There is a need for a system that enables quick reporting of emergencies, real-time resource matching, and clear guidance on safe zones for effective disaster relief.",
+                json.dumps(["WebRTC", "P2P Mesh", "GIS Mapping", "SOS Triage"]),
+                "Crisis Critical Mission",
+                datetime.utcnow().isoformat() + "Z"
+            )
+        ]
+        for p in default_problems:
+            cursor.execute("""
+                INSERT INTO problem_statements (
+                    id, problem_num, label, title, category, category_key,
+                    short_desc, recommended_stack_json, impact_score, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, p)
 
     # Add columns if they didn't exist in older table
     cursor.execute("PRAGMA table_info(registrations)")
@@ -206,7 +283,7 @@ def save_registration(
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO registrations (
+        INSERT OR REPLACE INTO registrations (
             id, event_id, event_name, team_name, college_name,
             leader_name, leader_email, leader_phone, members_json,
             is_solo, total_members, payment_status, payment_id, amount_paid, created_at
@@ -485,5 +562,149 @@ def clear_admin_otp() -> None:
     cursor.execute("DELETE FROM admin_otps")
     conn.commit()
     conn.close()
+
+def get_problem_statements() -> List[Dict[str, Any]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM problem_statements ORDER BY problem_num ASC")
+    rows = cursor.fetchall()
+    conn.close()
+
+    results = []
+    for row in rows:
+        try:
+            stack = json.loads(row["recommended_stack_json"])
+        except Exception:
+            stack = [s.strip() for s in row["recommended_stack_json"].split(",") if s.strip()]
+
+        results.append({
+            "id": row["id"],
+            "problemNum": row["problem_num"],
+            "label": row["label"],
+            "title": row["title"],
+            "category": row["category"],
+            "categoryKey": row["category_key"],
+            "shortDesc": row["short_desc"],
+            "recommendedStack": stack,
+            "impactScore": row["impact_score"],
+            "updatedAt": row["updated_at"]
+        })
+    return results
+
+def get_problem_statement(problem_id: str) -> Optional[Dict[str, Any]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM problem_statements WHERE id = ?", (problem_id,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        try:
+            stack = json.loads(row["recommended_stack_json"])
+        except Exception:
+            stack = [s.strip() for s in row["recommended_stack_json"].split(",") if s.strip()]
+
+        return {
+            "id": row["id"],
+            "problemNum": row["problem_num"],
+            "label": row["label"],
+            "title": row["title"],
+            "category": row["category"],
+            "categoryKey": row["category_key"],
+            "shortDesc": row["short_desc"],
+            "recommendedStack": stack,
+            "impactScore": row["impact_score"],
+            "updatedAt": row["updated_at"]
+        }
+    return None
+
+def update_problem_statement(
+    problem_id: str,
+    title: str,
+    category: str,
+    category_key: str,
+    short_desc: str,
+    recommended_stack: List[str],
+    impact_score: str
+) -> Optional[Dict[str, Any]]:
+    now = datetime.utcnow().isoformat() + "Z"
+    stack_json = json.dumps(recommended_stack if isinstance(recommended_stack, list) else [s.strip() for s in str(recommended_stack).split(",") if s.strip()])
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE problem_statements
+        SET title = ?, category = ?, category_key = ?, short_desc = ?, recommended_stack_json = ?, impact_score = ?, updated_at = ?
+        WHERE id = ?
+    """, (title.strip(), category.strip(), category_key.strip(), short_desc.strip(), stack_json, impact_score.strip(), now, problem_id))
+    conn.commit()
+    conn.close()
+
+    return get_problem_statement(problem_id)
+
+def reset_problem_statements() -> List[Dict[str, Any]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM problem_statements")
+    default_problems = [
+        (
+            "problem-1",
+            1,
+            "Problem 1",
+            "Smart Civic Issue Reporting",
+            "CIVIC TECH",
+            "civic",
+            "Local issues like potholes, garbage, and broken streetlights often go unaddressed due to lack of visibility and feedback. There is a need for a transparent platform where citizens can report such problems, track their status, and help authorities prioritize them.",
+            json.dumps(["Next.js", "Computer Vision", "Geolocation", "PostGIS"]),
+            "High Municipal Impact",
+            datetime.utcnow().isoformat() + "Z"
+        ),
+        (
+            "problem-2",
+            2,
+            "Problem 2",
+            "Personalized Learning Assistant",
+            "AI & EDTECH",
+            "edtech",
+            "Students face challenges because one-size-fits-all teaching does not match their individual strengths and weaknesses. There is a need for an intelligent assistant that adapts to learners, providing tailored study plans and real-time feedback.",
+            json.dumps(["React 19", "LLM Agents", "Knowledge Graphs", "Speech AI"]),
+            "Global EdTech Shift",
+            datetime.utcnow().isoformat() + "Z"
+        ),
+        (
+            "problem-3",
+            3,
+            "Problem 3",
+            "AI for Early Disease Detection",
+            "HEALTHCARE AI",
+            "health",
+            "Critical illnesses often go undiagnosed until too late, due to limited resources and delays in analysis. There is a need for AI-based solutions that can detect diseases early from minimal patient data or imaging, enabling faster and more accurate diagnosis.",
+            json.dumps(["PyTorch", "Medical CNNs", "Edge AI", "DICOM"]),
+            "Life-Saving Potential",
+            datetime.utcnow().isoformat() + "Z"
+        ),
+        (
+            "problem-4",
+            4,
+            "Problem 4",
+            "Smart Disaster Response Platform",
+            "DISASTER RESPONSE",
+            "disaster",
+            "During floods, landslides, and urban disasters, victims and responders struggle with poor coordination and slow resource allocation. There is a need for a system that enables quick reporting of emergencies, real-time resource matching, and clear guidance on safe zones for effective disaster relief.",
+            json.dumps(["WebRTC", "P2P Mesh", "GIS Mapping", "SOS Triage"]),
+            "Crisis Critical Mission",
+            datetime.utcnow().isoformat() + "Z"
+        )
+    ]
+    for p in default_problems:
+        cursor.execute("""
+            INSERT INTO problem_statements (
+                id, problem_num, label, title, category, category_key,
+                short_desc, recommended_stack_json, impact_score, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, p)
+    conn.commit()
+    conn.close()
+    return get_problem_statements()
 
 

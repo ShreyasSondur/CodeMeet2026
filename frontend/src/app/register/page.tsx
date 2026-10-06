@@ -320,7 +320,7 @@ function RegisterContent() {
       college_name: collegeName,
       is_solo: activeEvent.isSolo,
       payment_id: paymentId,
-      amount_paid: "1",
+      amount_paid: String(activeFeeInr || "100"),
       members: activeEvent.isSolo
         ? [{ name: soloParticipant.name, email: soloParticipant.email, phone: soloParticipant.phone, is_leader: true }]
         : members
@@ -506,7 +506,7 @@ function RegisterContent() {
       }
     };
 
-    // 3. FRONTEND - Launch Cashfree Seamless Modal Checkout
+    // 3. FRONTEND - Launch Cashfree Seamless Modal Checkout with Auto-Polling for UPI App Switch
     try {
       const cfEnv = orderData.environment || process.env.NEXT_PUBLIC_CASHFREE_ENV || "production";
       const cashfree = (window as any).Cashfree({
@@ -518,17 +518,65 @@ function RegisterContent() {
         redirectTarget: "_modal",
       };
 
+      let pollActive = true;
+      const pollInterval = setInterval(async () => {
+        if (!pollActive) {
+          clearInterval(pollInterval);
+          return;
+        }
+        try {
+          const pollRes = await fetch(`${apiUrl}/api/verify-payment`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              order_id: orderData!.order_id,
+              event_id: activeEvent.id,
+              event_name: activeEvent.title,
+              team_name: activeEvent.isSolo ? "" : teamName,
+              college_name: collegeName,
+              is_solo: activeEvent.isSolo,
+              members: memberPayload,
+              amount_paid: String(effectiveInr),
+            }),
+          });
+          if (pollRes.ok) {
+            const resultData = await pollRes.json();
+            pollActive = false;
+            clearInterval(pollInterval);
+            setConfirmedRegId(resultData.registration_id || orderData!.order_id);
+            setConfirmedPaymentId(resultData.payment_id || orderData!.order_id);
+            setConfirmedAmount(effectiveInr);
+            setIsSubmitting(false);
+            setIsSuccess(true);
+            setShowWhatsAppModal(true);
+            soundFX.playSuccess();
+          }
+        } catch {
+          // ignore transient network poll errors
+        }
+      }, 2500);
+
+      // Terminate polling after 6 minutes
+      setTimeout(() => {
+        pollActive = false;
+        clearInterval(pollInterval);
+      }, 360000);
+
       cashfree
         .checkout(checkoutOptions)
         .then((result: any) => {
           if (result.error) {
             console.warn("Cashfree checkout notice:", result.error);
-            setIsSubmitting(false);
-            setPaymentError(result.error.message || "Payment window closed. Click below to retry payment.");
+            // don't immediately abort if polling is still working for UPI
+            if (!pollActive) {
+              setIsSubmitting(false);
+              setPaymentError(result.error.message || "Payment window closed. Click below to retry payment.");
+            }
             return;
           }
           if (result.paymentDetails) {
-            console.log("Cashfree payment details:", result.paymentDetails);
+            pollActive = false;
+            clearInterval(pollInterval);
             completeBackendVerification(result.paymentDetails.paymentMessage);
             return;
           }
@@ -541,8 +589,10 @@ function RegisterContent() {
         })
         .catch((err: any) => {
           console.error("Cashfree checkout error:", err);
-          setIsSubmitting(false);
-          setPaymentError("Payment session interrupted. If your account was debited, please contact support.");
+          if (!pollActive) {
+            setIsSubmitting(false);
+            setPaymentError("Payment session interrupted. If your account was debited, please contact support.");
+          }
         });
     } catch (err: any) {
       console.error("Cashfree initialization error:", err);
