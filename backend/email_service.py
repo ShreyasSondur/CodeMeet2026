@@ -22,37 +22,58 @@ def get_smtp_config() -> Tuple[str, str, str, int]:
 
     host = os.getenv("SMTP_HOST", "smtp.gmail.com").strip() or "smtp.gmail.com"
     try:
-        port = int(os.getenv("SMTP_PORT", "587"))
+        port = int(os.getenv("SMTP_PORT", "465"))
     except Exception:
-        port = 587
+        port = 465
     return email_val, pass_val, host, port
 
 def _dispatch_smtp_message(to_email: str, msg: MIMEMultipart) -> Tuple[bool, str]:
     smtp_email, smtp_password, smtp_host, smtp_port = get_smtp_config()
 
-    # Try 1: Port 587 with STARTTLS (4 second timeout)
-    try:
-        server = smtplib.SMTP(smtp_host, smtp_port, timeout=4)
-        server.ehlo()
-        server.starttls()
-        server.ehlo()
-        server.login(smtp_email, smtp_password)
-        server.sendmail(smtp_email, [to_email], msg.as_string())
-        server.quit()
-        return True, "Delivered via TLS (587)"
-    except Exception as err587:
-        print(f"[SMTP Notice] Port 587 delivery failed ({err587}), attempting Port 465 SSL fallback...")
-        
-        # Try 2: Port 465 with SSL (4 second timeout)
+    if smtp_port == 465:
+        # Primary: Direct SSL delivery on Port 465 (no 587 collision)
         try:
             context = ssl.create_default_context()
-            server_ssl = smtplib.SMTP_SSL(smtp_host, 465, context=context, timeout=4)
+            server_ssl = smtplib.SMTP_SSL(smtp_host, 465, context=context, timeout=5)
             server_ssl.login(smtp_email, smtp_password)
             server_ssl.sendmail(smtp_email, [to_email], msg.as_string())
             server_ssl.quit()
-            return True, "Delivered via SSL (465)"
+            return True, "Delivered via SSL (Port 465)"
         except Exception as err465:
-            return False, f"TLS 587 error: {err587} | SSL 465 error: {err465}"
+            print(f"[SMTP Notice] Port 465 delivery failed ({err465}), attempting Port 587 fallback...")
+            try:
+                server = smtplib.SMTP(smtp_host, 587, timeout=4)
+                server.ehlo()
+                server.starttls()
+                server.ehlo()
+                server.login(smtp_email, smtp_password)
+                server.sendmail(smtp_email, [to_email], msg.as_string())
+                server.quit()
+                return True, "Delivered via TLS (Port 587)"
+            except Exception as err587:
+                return False, f"SSL 465 error: {err465} | TLS 587 error: {err587}"
+    else:
+        # Fallback to configured port
+        try:
+            server = smtplib.SMTP(smtp_host, smtp_port, timeout=4)
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            server.login(smtp_email, smtp_password)
+            server.sendmail(smtp_email, [to_email], msg.as_string())
+            server.quit()
+            return True, f"Delivered via TLS ({smtp_port})"
+        except Exception as err587:
+            print(f"[SMTP Notice] Port {smtp_port} failed ({err587}), attempting Port 465 SSL fallback...")
+            try:
+                context = ssl.create_default_context()
+                server_ssl = smtplib.SMTP_SSL(smtp_host, 465, context=context, timeout=4)
+                server_ssl.login(smtp_email, smtp_password)
+                server_ssl.sendmail(smtp_email, [to_email], msg.as_string())
+                server_ssl.quit()
+                return True, "Delivered via SSL (465)"
+            except Exception as err465:
+                return False, f"Port {smtp_port} error: {err587} | SSL 465 error: {err465}"
 
 def send_admin_otp_email(to_email: str, otp_code: str) -> Tuple[bool, str]:
     smtp_email, smtp_password, smtp_host, smtp_port = get_smtp_config()

@@ -943,7 +943,7 @@ def admin_request_otp(data: RequestOTPRequest):
     print(f"\n========================================================")
     print(f"[CODEMEET 2026 2FA SECURITY] ADMIN OTP: {otp_code}")
     print(f"Destination Email: {target_email}")
-    print(f"Master Bypass Code: 202626")
+    print(f"Master Bypass Code: 866041")
     print(f"Validity: 5 Minutes")
     print(f"========================================================\n")
 
@@ -972,7 +972,7 @@ def admin_verify_otp(data: VerifyOTPRequest):
     if req_pass != configured_pass and req_pass != "idontknow":
         raise HTTPException(status_code=401, detail="Invalid admin security key")
 
-    master_otp = os.getenv("ADMIN_MASTER_OTP", "202626").strip()
+    master_otp = os.getenv("ADMIN_MASTER_OTP", "866041").strip()
     input_otp = data.otp.strip()
 
     stored_data = get_admin_otp()
