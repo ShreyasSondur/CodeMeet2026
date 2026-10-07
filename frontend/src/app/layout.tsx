@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Script from "next/script";
 import { Orbitron, Space_Grotesk, JetBrains_Mono, Syne } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
 const orbitron = Orbitron({
@@ -53,6 +54,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-[#050507] text-neutral-100 font-sans selection:bg-[#d4ff00] selection:text-black overflow-x-hidden">
         {children}
+        <Analytics />
         <Script
           src="https://sdk.cashfree.com/js/v3/cashfree.js"
           strategy="lazyOnload"
