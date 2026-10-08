@@ -33,6 +33,8 @@ import {
   Check,
   X,
   Share2,
+  ChevronDown,
+  ArrowRight,
 } from "lucide-react";
 
 interface EventMeta {
@@ -171,6 +173,7 @@ function RegisterContent() {
   const eventParam = searchParams.get("event");
 
   const [selectedEventId, setSelectedEventId] = useState<string>("hackathon");
+  const [showEventSelector, setShowEventSelector] = useState(false);
 
   // General details
   const [teamName, setTeamName] = useState("");
@@ -281,6 +284,7 @@ function RegisterContent() {
   const handleSelectEvent = (id: string) => {
     soundFX.playClick();
     setSelectedEventId(id);
+    setShowEventSelector(false);
     router.push(`/register?event=${id}`);
   };
 
@@ -633,9 +637,9 @@ function RegisterContent() {
         </div>
 
         {/* Header Title */}
-        <div className="py-8 text-center sm:text-left">
+        <div className="py-4 sm:py-8 text-center sm:text-left">
           <div
-            className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-mono mb-4 border"
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-mono mb-3 border"
             style={{
               borderColor: `${activeEvent.color}40`,
               backgroundColor: `${activeEvent.color}15`,
@@ -645,16 +649,50 @@ function RegisterContent() {
             <Terminal className="w-3.5 h-3.5" />
             <span>EVENT REGISTRATION ARENA</span>
           </div>
-          <h1 className="font-[family-name:var(--font-orbitron)] font-black text-3xl sm:text-5xl md:text-6xl tracking-tight leading-tight">
+          <h1 className="font-[family-name:var(--font-orbitron)] font-black text-2xl sm:text-4xl md:text-5xl tracking-tight leading-tight">
             SECURE YOUR <span style={{ color: activeEvent.color }}>SLOT</span>
           </h1>
-          <p className="text-zinc-400 text-sm sm:text-base mt-2 max-w-2xl">
-            Choose your competition track, fill your team credentials, and register for CODEMEET 2026 at Srinivas University (SUIET).
+          <p className="text-zinc-400 text-xs sm:text-sm mt-1.5 max-w-2xl">
+            {activeEvent.title} — fill team credentials below to register instantly.
           </p>
         </div>
 
-        {/* Event Selector Tabs */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-8">
+        {/* Mobile Quick Event Switcher Bar */}
+        <div className="md:hidden mb-4">
+          <div className="flex items-center justify-between p-3 rounded-xl bg-zinc-950/90 border border-white/15 backdrop-blur-md">
+            <div className="flex items-center gap-3">
+              <div
+                className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+                style={{
+                  backgroundColor: `${activeEvent.color}20`,
+                  color: activeEvent.color,
+                }}
+              >
+                <Icon className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-[10px] font-mono uppercase text-zinc-400">Selected Event</div>
+                <div className="font-[family-name:var(--font-orbitron)] font-bold text-xs text-white">
+                  {activeEvent.title}
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                soundFX.playClick();
+                setShowEventSelector(!showEventSelector);
+              }}
+              className="px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white text-xs font-mono border border-white/10 transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+            >
+              <span>{showEventSelector ? "Hide" : "Change"}</span>
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showEventSelector ? "rotate-180" : ""}`} />
+            </button>
+          </div>
+        </div>
+
+        {/* Event Selector Tabs (shown on desktop or when toggled on mobile) */}
+        <div className={`${showEventSelector ? "grid" : "hidden md:grid"} grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-6 animate-in fade-in duration-200`}>
           {Object.values(EVENTS_DATA).map((ev) => {
             const EvIcon = ev.icon;
             const isSelected = ev.id === selectedEventId;
@@ -666,11 +704,12 @@ function RegisterContent() {
                 onMouseEnter={() => soundFX.playHover()}
                 className={`p-3 sm:p-4 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between relative overflow-hidden ${
                   isSelected
-                    ? "bg-zinc-900 border-opacity-100 shadow-lg shadow-black/80"
+                    ? "bg-zinc-900 border-opacity-100 shadow-lg shadow-black/80 ring-1"
                     : "bg-zinc-950/60 border-white/10 hover:border-white/25 opacity-70 hover:opacity-100"
                 }`}
                 style={{
                   borderColor: isSelected ? ev.color : undefined,
+                  boxShadow: isSelected ? `0 0 15px ${ev.color}25` : undefined,
                 }}
               >
                 {isSelected && (
@@ -1226,11 +1265,11 @@ function RegisterContent() {
             soundFX.playClick();
             setShowWhatsAppModal(false);
           }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200"
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="relative w-full max-w-lg bg-[#0a0d14] border-2 border-[#25D366] rounded-3xl p-6 sm:p-8 text-white shadow-[0_0_60px_rgba(37,211,102,0.3)] space-y-5 animate-in zoom-in-95 duration-200 overflow-hidden"
+            className="relative w-full max-w-lg max-h-[92dvh] bg-[#0a0d14] border-2 border-[#25D366] rounded-2xl sm:rounded-3xl p-4 sm:p-6 text-white shadow-[0_0_60px_rgba(37,211,102,0.3)] flex flex-col justify-between overflow-y-auto space-y-4 animate-in zoom-in-95 duration-200"
           >
             {/* Top Close 'X' Button */}
             <button
@@ -1238,90 +1277,90 @@ function RegisterContent() {
                 soundFX.playClick();
                 setShowWhatsAppModal(false);
               }}
-              className="absolute top-5 right-5 p-2 rounded-full bg-zinc-900/80 hover:bg-zinc-800 text-zinc-400 hover:text-white border border-white/10 transition-all cursor-pointer"
+              className="absolute top-3.5 right-3.5 sm:top-5 sm:right-5 p-2 rounded-full bg-zinc-900/90 hover:bg-zinc-800 text-zinc-400 hover:text-white border border-white/10 transition-all cursor-pointer z-20"
               title="Close modal"
             >
               <X className="w-5 h-5" />
             </button>
 
             {/* Header Badge */}
-            <div className="flex items-center gap-2.5">
-              <div className="w-10 h-10 rounded-xl bg-[#25D366]/20 border border-[#25D366]/50 flex items-center justify-center text-[#25D366]">
-                <MessageSquare className="w-5 h-5 fill-current" />
+            <div className="flex items-center gap-2.5 pr-8">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#25D366]/20 border border-[#25D366]/50 flex items-center justify-center text-[#25D366] shrink-0">
+                <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5 fill-current" />
               </div>
               <div>
                 <span className="text-[10px] font-mono font-bold tracking-widest text-[#25D366] uppercase block">
                   // ACTION REQUIRED • MANDATORY STEP
                 </span>
-                <h3 className="font-[family-name:var(--font-orbitron)] font-black text-lg sm:text-xl text-white">
+                <h3 className="font-[family-name:var(--font-orbitron)] font-black text-base sm:text-xl text-white">
                   JOIN OFFICIAL WHATSAPP GROUP
                 </h3>
               </div>
             </div>
 
             {/* Warning Box */}
-            <div className="p-4 rounded-2xl bg-amber-500/10 border-2 border-amber-500/40 text-amber-200 flex items-start gap-3.5">
-              <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <div className="font-bold font-mono text-xs uppercase tracking-wider text-amber-300">
+            <div className="p-3 sm:p-3.5 rounded-xl sm:rounded-2xl bg-amber-500/10 border border-amber-500/40 text-amber-200 flex items-start gap-2.5 sm:gap-3">
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <div className="font-bold font-mono text-[11px] uppercase tracking-wider text-amber-300">
                   ⚠️ ATTENTION PARTICIPANT
                 </div>
-                <p className="text-xs font-mono leading-relaxed text-amber-200/90">
+                <p className="text-[11px] font-mono leading-relaxed text-amber-200/90">
                   You <strong>MUST</strong> join this WhatsApp group at any cost! All official updates, challenge problem statements, reporting timings at SUIET Mukka, desk allocations, and live scoreboards are shared <strong>ONLY</strong> inside this community.
                 </p>
               </div>
             </div>
 
             {/* QR Code & Scan Instructions */}
-            <div className="p-5 rounded-2xl bg-black/90 border border-white/10 flex flex-col sm:flex-row items-center justify-center gap-5 text-center sm:text-left">
-              <div className="shrink-0 p-3 rounded-2xl bg-white shadow-2xl border-2 border-[#25D366]/40">
+            <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-black/90 border border-white/10 flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4 text-center sm:text-left">
+              <div className="shrink-0 p-2 sm:p-2.5 rounded-xl bg-white shadow-2xl border-2 border-[#25D366]/40">
                 <img
                   src="/whatsapp_group_qr.png"
                   alt="CODEMEET 2026 WhatsApp Group QR Code"
-                  className="w-36 h-36 sm:w-40 sm:h-40 object-contain rounded-lg"
+                  className="w-28 h-28 sm:w-36 sm:h-36 object-contain rounded-lg"
                 />
               </div>
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <div className="text-xs font-mono font-bold text-[#25D366] uppercase tracking-wider">
                   SCAN WITH WHATSAPP
                 </div>
                 <p className="text-xs text-zinc-300 leading-relaxed font-mono">
                   Open WhatsApp on your phone &gt; Settings &gt; QR Code icon next to your name &gt; Scan Code.
                 </p>
-                <div className="pt-1 text-[11px] font-mono text-zinc-500">
+                <div className="text-[10px] font-mono text-zinc-500">
                   Official community for all registered teams &amp; solo coders.
                 </div>
               </div>
             </div>
 
             {/* Action Buttons */}
-            <div className="space-y-3 pt-1">
+            <div className="space-y-2.5 pt-1">
               <a
                 href={WHATSAPP_GROUP_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={() => soundFX.playClick()}
-                className="w-full py-3.5 px-6 rounded-xl bg-[#25D366] hover:bg-[#20ba59] text-black font-[family-name:var(--font-orbitron)] font-black text-sm uppercase tracking-wider transition-all flex items-center justify-center gap-2.5 shadow-[0_0_30px_rgba(37,211,102,0.4)] cursor-pointer"
+                className="w-full py-3 sm:py-3.5 px-4 sm:px-6 rounded-xl bg-[#25D366] hover:bg-[#20ba59] active:scale-[0.99] text-black font-[family-name:var(--font-orbitron)] font-black text-xs sm:text-sm uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-[0_0_25px_rgba(37,211,102,0.4)] cursor-pointer"
               >
                 <MessageSquare className="w-4 h-4 fill-current" />
                 <span>CLICK TO JOIN WHATSAPP GROUP</span>
-                <ExternalLink className="w-4 h-4" />
+                <ExternalLink className="w-3.5 h-3.5" />
               </a>
 
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
                 <button
                   type="button"
                   onClick={handleCopyWhatsAppLink}
-                  className="flex-1 py-2.5 px-4 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-zinc-300 font-mono text-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  className="flex-1 py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-zinc-300 font-mono text-xs transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98"
                 >
                   {copiedLink ? (
                     <>
-                      <Check className="w-4 h-4 text-[#25D366]" />
+                      <Check className="w-3.5 h-3.5 text-[#25D366]" />
                       <span className="text-[#25D366] font-bold">Link Copied!</span>
                     </>
                   ) : (
                     <>
-                      <Copy className="w-4 h-4 text-zinc-400" />
+                      <Copy className="w-3.5 h-3.5 text-zinc-400" />
                       <span>Copy Group Invite Link</span>
                     </>
                   )}
@@ -1333,9 +1372,10 @@ function RegisterContent() {
                     soundFX.playClick();
                     setShowWhatsAppModal(false);
                   }}
-                  className="py-2.5 px-5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white font-mono text-xs font-bold transition-all cursor-pointer"
+                  className="py-2.5 px-5 rounded-xl bg-[#ccff00] hover:bg-[#d9ff33] text-black font-mono text-xs font-bold transition-all cursor-pointer active:scale-98 flex items-center justify-center gap-1.5 shadow-[0_0_15px_rgba(204,255,0,0.2)]"
                 >
-                  I've Joined / Continue
+                  <span>I've Joined / Continue</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>

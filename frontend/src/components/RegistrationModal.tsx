@@ -56,7 +56,7 @@ export default function RegistrationModal({ isOpen, onClose }: RegistrationModal
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/80 backdrop-blur-xl animate-in fade-in duration-200">
       <div 
         onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-lg bg-[#090b10] border border-[#ccff00]/40 rounded-2xl shadow-[0_0_50px_rgba(204,255,0,0.25)] p-6 sm:p-8 text-white overflow-hidden"
+        className="relative w-full max-w-lg max-h-[90dvh] bg-[#090b10] border border-[#ccff00]/40 rounded-2xl shadow-[0_0_50px_rgba(204,255,0,0.25)] p-5 sm:p-8 text-white overflow-y-auto"
       >
         {/* Ambient Top Glow */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-24 bg-[#ccff00]/15 blur-2xl pointer-events-none" />
