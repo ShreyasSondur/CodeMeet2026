@@ -466,8 +466,16 @@ function RegisterContent() {
       return;
     }
 
+    // Flag to prevent duplicate client-side verification triggers
+    let isVerificationDone = false;
+    let pollInterval: NodeJS.Timeout | null = null;
+
     // Helper to verify payment on backend
     const completeBackendVerification = async (paymentIdHint?: string) => {
+      if (isVerificationDone) return;
+      isVerificationDone = true;
+      if (pollInterval) clearInterval(pollInterval);
+
       try {
         const verifyRes = await fetch(`${apiUrl}/api/verify-payment`, {
           method: "POST",
@@ -498,6 +506,7 @@ function RegisterContent() {
           setShowWhatsAppModal(true);
           soundFX.playSuccess();
         } else {
+          isVerificationDone = false; // allow retry if failed
           const errData = await verifyRes.json().catch(() => ({}));
           setIsSubmitting(false);
           setPaymentError(errData.detail || "Payment verification failed or pending. If amount was debited, please contact support.");
@@ -505,6 +514,7 @@ function RegisterContent() {
         }
       } catch (verErr: any) {
         console.error("Verification error:", verErr);
+        isVerificationDone = false;
         setIsSubmitting(false);
         setPaymentError("Network error during payment verification. Please contact support.");
       }
@@ -523,9 +533,9 @@ function RegisterContent() {
       };
 
       let pollActive = true;
-      const pollInterval = setInterval(async () => {
-        if (!pollActive) {
-          clearInterval(pollInterval);
+      pollInterval = setInterval(async () => {
+        if (!pollActive || isVerificationDone) {
+          if (pollInterval) clearInterval(pollInterval);
           return;
         }
         try {
@@ -545,8 +555,10 @@ function RegisterContent() {
           });
           if (pollRes.ok) {
             const resultData = await pollRes.json();
+            if (isVerificationDone) return;
+            isVerificationDone = true;
             pollActive = false;
-            clearInterval(pollInterval);
+            if (pollInterval) clearInterval(pollInterval);
             setConfirmedRegId(resultData.registration_id || orderData!.order_id);
             setConfirmedPaymentId(resultData.payment_id || orderData!.order_id);
             setConfirmedAmount(effectiveInr);
@@ -563,7 +575,7 @@ function RegisterContent() {
       // Terminate polling after 6 minutes
       setTimeout(() => {
         pollActive = false;
-        clearInterval(pollInterval);
+        if (pollInterval) clearInterval(pollInterval);
       }, 360000);
 
       cashfree
@@ -572,7 +584,7 @@ function RegisterContent() {
           if (result.error) {
             console.warn("Cashfree checkout notice:", result.error);
             // don't immediately abort if polling is still working for UPI
-            if (!pollActive) {
+            if (!pollActive && !isVerificationDone) {
               setIsSubmitting(false);
               setPaymentError(result.error.message || "Payment window closed. Click below to retry payment.");
             }
@@ -580,7 +592,7 @@ function RegisterContent() {
           }
           if (result.paymentDetails) {
             pollActive = false;
-            clearInterval(pollInterval);
+            if (pollInterval) clearInterval(pollInterval);
             completeBackendVerification(result.paymentDetails.paymentMessage);
             return;
           }
@@ -589,11 +601,13 @@ function RegisterContent() {
             return;
           }
           // Verification check when modal finishes
-          completeBackendVerification();
+          if (!isVerificationDone) {
+            completeBackendVerification();
+          }
         })
         .catch((err: any) => {
           console.error("Cashfree checkout error:", err);
-          if (!pollActive) {
+          if (!pollActive && !isVerificationDone) {
             setIsSubmitting(false);
             setPaymentError("Payment session interrupted. If your account was debited, please contact support.");
           }

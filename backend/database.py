@@ -183,6 +183,8 @@ def init_db():
         cursor.execute("ALTER TABLE registrations ADD COLUMN payment_id TEXT DEFAULT ''")
     if "amount_paid" not in columns:
         cursor.execute("ALTER TABLE registrations ADD COLUMN amount_paid TEXT DEFAULT '1'")
+    if "order_id" not in columns:
+        cursor.execute("ALTER TABLE registrations ADD COLUMN order_id TEXT DEFAULT ''")
     conn.commit()
     conn.close()
 
@@ -275,7 +277,8 @@ def save_registration(
     payment_status: str = "VERIFIED",
     payment_id: str = "",
     amount_paid: str = "1",
-    created_at: Optional[str] = None
+    created_at: Optional[str] = None,
+    order_id: Optional[str] = ""
 ) -> Dict[str, Any]:
     if not created_at:
         created_at = datetime.utcnow().isoformat() + "Z"
@@ -286,8 +289,8 @@ def save_registration(
         INSERT OR REPLACE INTO registrations (
             id, event_id, event_name, team_name, college_name,
             leader_name, leader_email, leader_phone, members_json,
-            is_solo, total_members, payment_status, payment_id, amount_paid, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            is_solo, total_members, payment_status, payment_id, amount_paid, created_at, order_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         reg_id,
         event_id,
@@ -303,7 +306,8 @@ def save_registration(
         payment_status,
         payment_id or "",
         amount_paid or "1",
-        created_at
+        created_at,
+        order_id or ""
     ))
     conn.commit()
     conn.close()
@@ -322,6 +326,7 @@ def save_registration(
         "total_members": len(members),
         "payment_status": payment_status,
         "payment_id": payment_id or "",
+        "order_id": order_id or "",
         "amount_paid": amount_paid or "1",
         "created_at": created_at
     }
@@ -391,31 +396,100 @@ def get_pending_order(order_id: str) -> Optional[Dict[str, Any]]:
         }
     return None
 
+def _format_registration_row(row: sqlite3.Row) -> Dict[str, Any]:
+    row_keys = row.keys()
+    return {
+        "id": row["id"],
+        "event_id": row["event_id"],
+        "event_name": row["event_name"],
+        "team_name": row["team_name"],
+        "college_name": row["college_name"],
+        "leader_name": row["leader_name"],
+        "leader_email": row["leader_email"],
+        "leader_phone": row["leader_phone"],
+        "members": json.loads(row["members_json"]),
+        "is_solo": bool(row["is_solo"]),
+        "total_members": row["total_members"] if "total_members" in row_keys else len(json.loads(row["members_json"])),
+        "payment_status": row["payment_status"],
+        "payment_id": row["payment_id"] if "payment_id" in row_keys else "",
+        "order_id": row["order_id"] if "order_id" in row_keys else "",
+        "amount_paid": row["amount_paid"] if "amount_paid" in row_keys else "1",
+        "created_at": row["created_at"]
+    }
+
 def get_registration_by_payment_id(payment_id: str) -> Optional[Dict[str, Any]]:
     if not payment_id:
         return None
+    clean_id = str(payment_id).strip()
+    raw_id = clean_id[3:] if clean_id.startswith("CF_") else clean_id
+    cf_id = f"CF_{raw_id}"
+
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM registrations WHERE payment_id = ? OR id = ?", (payment_id, payment_id))
+    cursor.execute("""
+        SELECT * FROM registrations 
+        WHERE payment_id = ? 
+           OR payment_id = ? 
+           OR payment_id = ?
+           OR order_id = ? 
+           OR order_id = ?
+           OR id = ?
+        LIMIT 1
+    """, (clean_id, raw_id, cf_id, clean_id, raw_id, clean_id))
     row = cursor.fetchone()
     conn.close()
     if row:
-        return {
-            "id": row["id"],
-            "event_id": row["event_id"],
-            "event_name": row["event_name"],
-            "team_name": row["team_name"],
-            "college_name": row["college_name"],
-            "leader_name": row["leader_name"],
-            "leader_email": row["leader_email"],
-            "leader_phone": row["leader_phone"],
-            "members": json.loads(row["members_json"]),
-            "is_solo": bool(row["is_solo"]),
-            "payment_status": row["payment_status"],
-            "payment_id": row["payment_id"],
-            "amount_paid": row["amount_paid"],
-            "created_at": row["created_at"]
-        }
+        return _format_registration_row(row)
+    return None
+
+def get_registration_by_order_or_payment(
+    order_id: Optional[str] = None,
+    payment_id: Optional[str] = None,
+    leader_email: Optional[str] = None,
+    event_id: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    ids_to_check = set()
+    for val in [order_id, payment_id]:
+        if val and str(val).strip():
+            c = str(val).strip()
+            ids_to_check.add(c)
+            if c.startswith("CF_"):
+                ids_to_check.add(c[3:])
+            else:
+                ids_to_check.add(f"CF_{c}")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if ids_to_check:
+        placeholders = ",".join(["?"] * len(ids_to_check))
+        params = list(ids_to_check) * 3
+        query = f"""
+            SELECT * FROM registrations 
+            WHERE payment_id IN ({placeholders})
+               OR order_id IN ({placeholders})
+               OR id IN ({placeholders})
+            LIMIT 1
+        """
+        cursor.execute(query, params)
+        row = cursor.fetchone()
+        if row:
+            conn.close()
+            return _format_registration_row(row)
+
+    if leader_email and event_id:
+        cursor.execute("""
+            SELECT * FROM registrations 
+            WHERE LOWER(leader_email) = LOWER(?) AND event_id = ? AND payment_status = 'PAID'
+            ORDER BY created_at DESC
+            LIMIT 1
+        """, (leader_email.strip(), event_id.strip()))
+        row = cursor.fetchone()
+        if row:
+            conn.close()
+            return _format_registration_row(row)
+
+    conn.close()
     return None
 
 def get_stats() -> Dict[str, Any]:

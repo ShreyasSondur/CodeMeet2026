@@ -37,14 +37,19 @@ from database import (
     save_pending_order,
     get_pending_order,
     get_registration_by_payment_id,
+    get_registration_by_order_or_payment,
     get_problem_statements,
     get_problem_statement,
     update_problem_statement,
     reset_problem_statements
 )
 from email_service import send_admin_otp_email, send_registration_confirmation_emails
+import threading
 
 load_dotenv()
+
+# Global mutex for thread-safe idempotent registration persistence
+_REGISTRATION_MUTEX = threading.Lock()
 
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "idontknow")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", os.getenv("SMTP_EMAIL", "admin@codemeet.com"))
@@ -392,8 +397,8 @@ async def admin_upload_rulebook(
         raise HTTPException(status_code=400, detail="Invalid file type. Only PDF, DOC, DOCX files are allowed.")
 
     content = await file.read()
-    if len(content) > 30 * 1024 * 1024:  # 30 MB max
-        raise HTTPException(status_code=400, detail="File too large. Maximum allowed size is 30 MB.")
+    if len(content) > 100 * 1024 * 1024:  # 100 MB max
+        raise HTTPException(status_code=400, detail="File too large. Maximum allowed size is 100 MB.")
 
     saved_filename = f"rulebook_{int(time.time())}{ext}"
     target_path = os.path.join(UPLOADS_DIR, saved_filename)
@@ -600,134 +605,147 @@ def _process_successful_payment(
     """
     Guaranteed registration persistence & email dispatch logic.
     Works seamlessly whether triggered by user redirect, polling, or Cashfree webhook.
+    Thread-synchronized with mutex to prevent duplicate creation.
     """
-    # 1. Check if already recorded
-    existing_reg = (
-        get_registration_by_payment_id(resolved_order_id) or
-        get_registration_by_payment_id(payment_record_id) or
-        get_registration_by_payment_id(f"CF_{resolved_order_id}")
-    )
-    if existing_reg:
-        return existing_reg
+    with _REGISTRATION_MUTEX:
+        # 1. Check if already recorded
+        existing_reg = get_registration_by_order_or_payment(
+            order_id=resolved_order_id,
+            payment_id=payment_record_id
+        )
+        if existing_reg:
+            return existing_reg
 
-    # 2. Fetch pending order information
-    pending_info = get_pending_order(resolved_order_id) or {}
+        # 2. Fetch pending order information
+        pending_info = get_pending_order(resolved_order_id) or {}
 
-    # Extract customer info from Cashfree order details if present
-    cust_info = (order_info.get("customer_details") if order_info else {}) or {}
-    cust_name = cust_info.get("customer_name") or "Participant"
-    cust_email = cust_info.get("customer_email") or "participant@codemeet.com"
-    cust_phone = cust_info.get("customer_phone") or "9876543210"
+        # Extract customer info from Cashfree order details if present
+        cust_info = (order_info.get("customer_details") if order_info else {}) or {}
+        cust_name = cust_info.get("customer_name") or "Participant"
+        cust_email = cust_info.get("customer_email") or "participant@codemeet.com"
+        cust_phone = cust_info.get("customer_phone") or "9876543210"
 
-    # Merge college name
-    college_name = (
-        (req_data.college_name.strip() if req_data and req_data.college_name else "") or
-        (pending_info.get("college_name") or "").strip() or
-        "Participant Institution"
-    )
+        # Merge college name
+        college_name = (
+            (req_data.college_name.strip() if req_data and req_data.college_name else "") or
+            (pending_info.get("college_name") or "").strip() or
+            "Participant Institution"
+        )
 
-    # Merge members data
-    members_data: List[Dict[str, Any]] = []
-    if req_data and req_data.members and len(req_data.members) > 0:
-        members_data = [m.model_dump() for m in req_data.members]
-    elif pending_info.get("members") and len(pending_info.get("members")) > 0:
-        members_data = pending_info.get("members")
-    else:
-        members_data = [{
-            "name": pending_info.get("leader_name") or cust_name,
-            "email": pending_info.get("leader_email") or cust_email,
-            "phone": pending_info.get("leader_phone") or cust_phone,
-            "is_leader": True
-        }]
+        # Merge members data
+        members_data: List[Dict[str, Any]] = []
+        if req_data and req_data.members and len(req_data.members) > 0:
+            members_data = [m.model_dump() for m in req_data.members]
+        elif pending_info.get("members") and len(pending_info.get("members")) > 0:
+            members_data = pending_info.get("members")
+        else:
+            members_data = [{
+                "name": pending_info.get("leader_name") or cust_name,
+                "email": pending_info.get("leader_email") or cust_email,
+                "phone": pending_info.get("leader_phone") or cust_phone,
+                "is_leader": True
+            }]
 
-    # Merge event metadata
-    event_id = (
-        (req_data.event_id if req_data and req_data.event_id else "") or
-        pending_info.get("event_id") or
-        "hackathon"
-    )
+        # Merge event metadata
+        event_id = (
+            (req_data.event_id if req_data and req_data.event_id else "") or
+            pending_info.get("event_id") or
+            "hackathon"
+        )
 
-    event_names_map = {
-        "hackathon": "24H National Hackathon",
-        "speed-typing": "Speed Typing Showdown",
-        "treasure-hunt": "Treasure Hunt Cyber Quest",
-        "free-fire": "Free Fire Esports Arena"
-    }
-    event_name = (
-        (req_data.event_name if req_data and req_data.event_name else "") or
-        pending_info.get("event_name") or
-        event_names_map.get(event_id, event_id.replace("-", " ").title())
-    )
+        # Secondary check by leader email + event_id
+        leader_email_val = (members_data[0].get("email") if members_data else "") or pending_info.get("leader_email") or cust_email
+        existing_by_email = get_registration_by_order_or_payment(
+            order_id=resolved_order_id,
+            payment_id=payment_record_id,
+            leader_email=leader_email_val,
+            event_id=event_id
+        )
+        if existing_by_email:
+            return existing_by_email
 
-    team_name = (
-        (req_data.team_name if req_data and req_data.team_name else "") or
-        pending_info.get("team_name") or
-        ""
-    )
+        event_names_map = {
+            "hackathon": "24H National Hackathon",
+            "speed-typing": "Speed Typing Showdown",
+            "treasure-hunt": "Treasure Hunt Cyber Quest",
+            "free-fire": "Free Fire Esports Arena"
+        }
+        event_name = (
+            (req_data.event_name if req_data and req_data.event_name else "") or
+            pending_info.get("event_name") or
+            event_names_map.get(event_id, event_id.replace("-", " ").title())
+        )
 
-    is_solo = req_data.is_solo if (req_data and req_data.is_solo is not None) else pending_info.get("is_solo", False)
+        team_name = (
+            (req_data.team_name if req_data and req_data.team_name else "") or
+            pending_info.get("team_name") or
+            ""
+        )
 
-    # Generate unique ID
-    prefix = "CM26"
-    event_code = {
-        "hackathon": "HACK",
-        "speed-typing": "TYPE",
-        "treasure-hunt": "HUNT",
-        "free-fire": "FIRE"
-    }.get(event_id, "PASS")
-    
-    short_uuid = uuid.uuid4().hex[:6].upper()
-    reg_id = f"{prefix}-{event_code}-{short_uuid}"
+        is_solo = req_data.is_solo if (req_data and req_data.is_solo is not None) else pending_info.get("is_solo", False)
 
-    leader = members_data[0] if members_data else {
-        "name": cust_name,
-        "email": cust_email,
-        "phone": cust_phone
-    }
+        # Generate unique ID
+        prefix = "CM26"
+        event_code = {
+            "hackathon": "HACK",
+            "speed-typing": "TYPE",
+            "treasure-hunt": "HUNT",
+            "free-fire": "FIRE"
+        }.get(event_id, "PASS")
+        
+        short_uuid = uuid.uuid4().hex[:6].upper()
+        reg_id = f"{prefix}-{event_code}-{short_uuid}"
 
-    # Resolve amount paid
-    order_amount = order_info.get("order_amount") if order_info else None
-    if order_amount:
-        effective_amount = str(int(order_amount))
-    elif pending_info.get("amount_inr"):
-        effective_amount = str(int(pending_info["amount_inr"]))
-    else:
-        pricing = get_event_pricing(event_id)
-        effective_amount = str(int(pricing["amount_inr"])) if pricing else (req_data.amount_paid if req_data else "100")
+        leader = members_data[0] if members_data else {
+            "name": cust_name,
+            "email": cust_email,
+            "phone": cust_phone
+        }
 
-    saved_rec = save_registration(
-        reg_id=reg_id,
-        event_id=event_id,
-        event_name=event_name,
-        team_name=team_name or ("Solo" if is_solo else ""),
-        college_name=college_name,
-        leader_name=leader.get("name") or cust_name,
-        leader_email=leader.get("email") or cust_email,
-        leader_phone=leader.get("phone") or cust_phone,
-        members=members_data,
-        is_solo=bool(is_solo),
-        payment_status="PAID",
-        payment_id=payment_record_id or resolved_order_id,
-        amount_paid=effective_amount or "100"
-    )
+        # Resolve amount paid
+        order_amount = order_info.get("order_amount") if order_info else None
+        if order_amount:
+            effective_amount = str(int(order_amount))
+        elif pending_info.get("amount_inr"):
+            effective_amount = str(int(pending_info["amount_inr"]))
+        else:
+            pricing = get_event_pricing(event_id)
+            effective_amount = str(int(pricing["amount_inr"])) if pricing else (req_data.amount_paid if req_data else "100")
 
-    # Dispatch confirmation emails to all participants
-    try:
-        send_registration_confirmation_emails(
+        saved_rec = save_registration(
             reg_id=reg_id,
             event_id=event_id,
             event_name=event_name,
             team_name=team_name or ("Solo" if is_solo else ""),
             college_name=college_name,
+            leader_name=leader.get("name") or cust_name,
+            leader_email=leader.get("email") or cust_email,
+            leader_phone=leader.get("phone") or cust_phone,
             members=members_data,
             is_solo=bool(is_solo),
+            payment_status="PAID",
+            payment_id=payment_record_id or resolved_order_id,
             amount_paid=effective_amount or "100",
-            payment_id=payment_record_id or resolved_order_id
+            order_id=resolved_order_id
         )
-    except Exception as mail_err:
-        print(f"[Warning] Failed to send registration emails: {mail_err}")
 
-    return saved_rec
+        # Dispatch confirmation emails to all participants
+        try:
+            send_registration_confirmation_emails(
+                reg_id=reg_id,
+                event_id=event_id,
+                event_name=event_name,
+                team_name=team_name or ("Solo" if is_solo else ""),
+                college_name=college_name,
+                members=members_data,
+                is_solo=bool(is_solo),
+                amount_paid=effective_amount or "100",
+                payment_id=payment_record_id or resolved_order_id
+            )
+        except Exception as mail_err:
+            print(f"[Warning] Failed to send registration emails: {mail_err}")
+
+        return saved_rec
 
 
 @app.post("/api/verify-payment")
@@ -740,10 +758,9 @@ def verify_payment(data: VerifyPaymentRequest):
         )
 
     # Check if this order or payment has already been verified and registered
-    existing_reg = (
-        get_registration_by_payment_id(resolved_order_id) or
-        (get_registration_by_payment_id(data.payment_id) if data.payment_id else None) or
-        get_registration_by_payment_id(f"CF_{resolved_order_id}")
+    existing_reg = get_registration_by_order_or_payment(
+        order_id=resolved_order_id,
+        payment_id=data.payment_id
     )
     if existing_reg:
         return {
@@ -872,56 +889,69 @@ def register_participant(data: RegistrationRequest):
     if not data.members or len(data.members) == 0:
         raise HTTPException(status_code=400, detail="At least one participant is required")
 
-    prefix = "CM26"
-    event_code = {
-        "hackathon": "HACK",
-        "speed-typing": "TYPE",
-        "treasure-hunt": "HUNT",
-        "free-fire": "FIRE"
-    }.get(data.event_id, "PASS")
-    
-    short_uuid = uuid.uuid4().hex[:6].upper()
-    reg_id = f"{prefix}-{event_code}-{short_uuid}"
+    with _REGISTRATION_MUTEX:
+        if data.payment_id:
+            existing = get_registration_by_order_or_payment(payment_id=data.payment_id)
+            if existing:
+                return {
+                    "success": True,
+                    "registration_id": existing["id"],
+                    "payment_id": existing.get("payment_id", data.payment_id),
+                    "message": "Registration already confirmed!",
+                    "data": existing
+                }
 
-    leader = data.members[0]
-    members_data = [m.model_dump() for m in data.members]
+        prefix = "CM26"
+        event_code = {
+            "hackathon": "HACK",
+            "speed-typing": "TYPE",
+            "treasure-hunt": "HUNT",
+            "free-fire": "FIRE"
+        }.get(data.event_id, "PASS")
+        
+        short_uuid = uuid.uuid4().hex[:6].upper()
+        reg_id = f"{prefix}-{event_code}-{short_uuid}"
 
-    reg = save_registration(
-        reg_id=reg_id,
-        event_id=data.event_id,
-        event_name=data.event_name,
-        team_name=data.team_name or ("Solo" if data.is_solo else ""),
-        college_name=data.college_name,
-        leader_name=leader.name,
-        leader_email=leader.email,
-        leader_phone=leader.phone,
-        members=members_data,
-        is_solo=bool(data.is_solo),
-        payment_status="PAID" if data.payment_id else "VERIFIED",
-        payment_id=data.payment_id or "",
-        amount_paid=data.amount_paid or "1"
-    )
+        leader = data.members[0]
+        members_data = [m.model_dump() for m in data.members]
 
-    # Dispatch personalized confirmation emails to all participants (solo or every team member)
-    send_registration_confirmation_emails(
-        reg_id=reg_id,
-        event_id=data.event_id,
-        event_name=data.event_name,
-        team_name=data.team_name or ("Solo" if data.is_solo else ""),
-        college_name=data.college_name,
-        members=members_data,
-        is_solo=bool(data.is_solo),
-        amount_paid=data.amount_paid or "1",
-        payment_id=data.payment_id or ""
-    )
+        reg = save_registration(
+            reg_id=reg_id,
+            event_id=data.event_id,
+            event_name=data.event_name,
+            team_name=data.team_name or ("Solo" if data.is_solo else ""),
+            college_name=data.college_name,
+            leader_name=leader.name,
+            leader_email=leader.email,
+            leader_phone=leader.phone,
+            members=members_data,
+            is_solo=bool(data.is_solo),
+            payment_status="PAID" if data.payment_id else "VERIFIED",
+            payment_id=data.payment_id or "",
+            amount_paid=data.amount_paid or "1",
+            order_id=data.payment_id or ""
+        )
 
-    return {
-        "success": True,
-        "registration_id": reg_id,
-        "payment_id": data.payment_id or "",
-        "message": "Registration & payment confirmed successfully!",
-        "data": reg
-    }
+        # Dispatch personalized confirmation emails to all participants (solo or every team member)
+        send_registration_confirmation_emails(
+            reg_id=reg_id,
+            event_id=data.event_id,
+            event_name=data.event_name,
+            team_name=data.team_name or ("Solo" if data.is_solo else ""),
+            college_name=data.college_name,
+            members=members_data,
+            is_solo=bool(data.is_solo),
+            amount_paid=data.amount_paid or "1",
+            payment_id=data.payment_id or ""
+        )
+
+        return {
+            "success": True,
+            "registration_id": reg_id,
+            "payment_id": data.payment_id or "",
+            "message": "Registration & payment confirmed successfully!",
+            "data": reg
+        }
 
 # --- 2FA ADMIN AUTHENTICATION ENDPOINTS ---
 

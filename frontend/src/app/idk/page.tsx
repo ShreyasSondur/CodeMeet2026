@@ -334,10 +334,14 @@ export default function AdminPage() {
     return () => clearInterval(timer);
   }, [authStep, countdown]);
 
-  const getAuthHeaders = (overrideToken?: string) => ({
-    "Content-Type": "application/json",
-    "x-admin-token": overrideToken || getAdminToken(),
-  });
+  const getAuthHeaders = (overrideToken?: string) => {
+    const token = overrideToken || getAdminToken();
+    return {
+      "Content-Type": "application/json",
+      "x-admin-token": token,
+      Authorization: `Bearer ${token}`,
+    };
+  };
 
   // Step 1: Request OTP
   const handleRequestOTP = async (e: React.FormEvent) => {
@@ -554,6 +558,18 @@ export default function AdminPage() {
       return;
     }
 
+    const token = getAdminToken();
+    if (!token) {
+      setRulebookNotice("Unauthorized: Missing admin security token. Please log in again.");
+      handleUnauthorized();
+      return;
+    }
+
+    if (selectedRulebookFile.size > 100 * 1024 * 1024) {
+      setRulebookNotice("File too large. Maximum allowed size is 100 MB.");
+      return;
+    }
+
     soundFX.playClick();
     setIsUploadingRulebook(true);
     setRulebookNotice("");
@@ -561,18 +577,23 @@ export default function AdminPage() {
     const formData = new FormData();
     formData.append("file", selectedRulebookFile);
 
-    const token = sessionStorage.getItem("codemeet_admin_session_token") || "";
-
     try {
       const res = await fetch(`${apiUrl}/api/admin/rulebook/upload`, {
         method: "POST",
         headers: {
           "x-admin-token": token,
+          Authorization: `Bearer ${token}`,
         },
         body: formData,
       });
 
       const data = await res.json();
+      if (res.status === 401) {
+        handleUnauthorized();
+        setRulebookNotice("Session expired. Please log in again.");
+        return;
+      }
+
       if (res.ok && data.success) {
         soundFX.playSuccess();
         setRulebookMeta(data.meta);
@@ -593,6 +614,12 @@ export default function AdminPage() {
   const handleDeleteRulebook = async () => {
     if (!confirm("Are you sure you want to delete the active custom rulebook and revert to default?")) return;
 
+    const token = getAdminToken();
+    if (!token) {
+      handleUnauthorized();
+      return;
+    }
+
     soundFX.playClick();
     setIsDeletingRulebook(true);
     setRulebookNotice("");
@@ -600,10 +627,15 @@ export default function AdminPage() {
     try {
       const res = await fetch(`${apiUrl}/api/admin/rulebook`, {
         method: "DELETE",
-        headers: getAuthHeaders(),
+        headers: getAuthHeaders(token),
       });
 
       const data = await res.json();
+      if (res.status === 401) {
+        handleUnauthorized();
+        return;
+      }
+
       if (res.ok && data.success) {
         soundFX.playSuccess();
         setRulebookMeta(data.meta);
@@ -750,13 +782,24 @@ export default function AdminPage() {
 
   const handleExportExcel = () => {
     soundFX.playClick();
-    const token = sessionStorage.getItem("codemeet_admin_session_token") || "";
+    const token = getAdminToken();
+    if (!token) {
+      handleUnauthorized();
+      return;
+    }
     const eventParam = selectedEvent !== "all" ? `?event_id=${selectedEvent}` : "";
     
     fetch(`${apiUrl}/api/admin/export/excel${eventParam}`, {
-      headers: { "x-admin-token": token },
+      headers: {
+        "x-admin-token": token,
+        Authorization: `Bearer ${token}`,
+      },
     })
       .then((res) => {
+        if (res.status === 401) {
+          handleUnauthorized();
+          throw new Error("Admin session expired. Please re-authenticate.");
+        }
         if (!res.ok) throw new Error("Export failed");
         return res.blob();
       })
@@ -772,7 +815,7 @@ export default function AdminPage() {
       })
       .catch((err) => {
         console.error("Export error:", err);
-        alert("Failed to export Excel file. Ensure backend is running.");
+        alert(err.message || "Failed to export Excel file. Ensure backend is running.");
       });
   };
 
