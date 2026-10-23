@@ -20,6 +20,7 @@ import {
   Clock,
   Sparkles,
   CheckCircle2,
+  Lock,
 } from "lucide-react";
 
 interface EventCard {
@@ -101,7 +102,7 @@ const eventCards: EventCard[] = [
 ];
 
 export default function RegistrationSection() {
-  const [pricings, setPricings] = useState<Record<string, { amount_inr: number }>>({});
+  const [pricings, setPricings] = useState<Record<string, { amount_inr: number; is_open?: boolean }>>({});
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
   useEffect(() => {
@@ -205,6 +206,8 @@ export default function RegistrationSection() {
             },
           }[card.tagColor];
 
+          const isTrackOpen = pricings[card.id]?.is_open !== false;
+
           return (
             <motion.div
               key={card.id}
@@ -233,9 +236,17 @@ export default function RegistrationSection() {
                       <IconComponent className="w-5 h-5" />
                     </div>
                     <div>
-                      <span className={`px-2.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider border ${colorStyles.badge}`}>
-                        {card.tag}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className={`px-2.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider border ${colorStyles.badge}`}>
+                          {card.tag}
+                        </span>
+                        {!isTrackOpen && (
+                          <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold uppercase tracking-wider bg-red-500/20 text-red-400 border border-red-500/40 flex items-center gap-1">
+                            <Lock className="w-2.5 h-2.5" />
+                            CLOSED
+                          </span>
+                        )}
+                      </div>
                       <div className="text-[10px] font-mono text-zinc-500 mt-0.5">{card.subtitle}</div>
                     </div>
                   </div>
@@ -282,13 +293,28 @@ export default function RegistrationSection() {
                   href={card.registerUrl}
                   onClick={() => soundFX.playClick()}
                   onMouseEnter={() => soundFX.playHover()}
-                  className={`group/btn relative w-full py-3.5 px-5 rounded-xl ${colorStyles.btn} font-[family-name:var(--font-orbitron)] font-bold text-xs sm:text-sm tracking-wider uppercase flex items-center justify-center gap-2 transition-all duration-300 active:scale-[0.98] overflow-hidden`}
+                  className={`group/btn relative w-full py-3.5 px-5 rounded-xl ${
+                    isTrackOpen
+                      ? colorStyles.btn
+                      : "bg-zinc-800/90 hover:bg-zinc-800 text-zinc-400 border border-red-500/30 shadow-[0_0_15px_rgba(239,68,68,0.15)]"
+                  } font-[family-name:var(--font-orbitron)] font-bold text-xs sm:text-sm tracking-wider uppercase flex items-center justify-center gap-2 transition-all duration-300 active:scale-[0.98] overflow-hidden`}
                 >
                   {/* Shimmer Light Bar */}
-                  <div className="absolute inset-0 -translate-x-full group-hover/btn:translate-x-full transition-transform duration-700 bg-gradient-to-r from-transparent via-white/35 to-transparent pointer-events-none" />
+                  {isTrackOpen && (
+                    <div className="absolute inset-0 -translate-x-full group-hover/btn:translate-x-full transition-transform duration-700 bg-gradient-to-r from-transparent via-white/35 to-transparent pointer-events-none" />
+                  )}
 
-                  <span>REGISTER NOW</span>
-                  <ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform" />
+                  {!isTrackOpen ? (
+                    <>
+                      <Lock className="w-4 h-4 text-red-400" />
+                      <span>REGISTRATION CLOSED</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>REGISTER NOW</span>
+                      <ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform" />
+                    </>
+                  )}
                 </Link>
               </div>
             </motion.div>

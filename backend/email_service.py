@@ -34,7 +34,7 @@ def _dispatch_smtp_message(to_email: str, msg: MIMEMultipart) -> Tuple[bool, str
         # Primary: Direct SSL delivery on Port 465 (no 587 collision)
         try:
             context = ssl.create_default_context()
-            server_ssl = smtplib.SMTP_SSL(smtp_host, 465, context=context, timeout=5)
+            server_ssl = smtplib.SMTP_SSL(smtp_host, 465, context=context, timeout=8)
             server_ssl.login(smtp_email, smtp_password)
             server_ssl.sendmail(smtp_email, [to_email], msg.as_string())
             server_ssl.quit()
@@ -42,7 +42,7 @@ def _dispatch_smtp_message(to_email: str, msg: MIMEMultipart) -> Tuple[bool, str
         except Exception as err465:
             print(f"[SMTP Notice] Port 465 delivery failed ({err465}), attempting Port 587 fallback...")
             try:
-                server = smtplib.SMTP(smtp_host, 587, timeout=4)
+                server = smtplib.SMTP(smtp_host, 587, timeout=8)
                 server.ehlo()
                 server.starttls()
                 server.ehlo()

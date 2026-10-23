@@ -7,7 +7,7 @@ import { ArrowLeft, Building2, Trophy, Tag, Sparkles, CheckCircle2 } from "lucid
 import { soundFX } from "@/lib/audio";
 
 export default function AboutPricingPage() {
-  const [pricings, setPricings] = useState<Record<string, { amount_inr: number }>>({});
+  const [pricings, setPricings] = useState<Record<string, { amount_inr: number; is_open?: boolean }>>({});
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
   useEffect(() => {
@@ -122,10 +122,21 @@ export default function AboutPricingPage() {
                 key={i}
                 className="p-5 rounded-2xl bg-black/60 border border-white/10 space-y-3 font-mono"
               >
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-white text-sm">{item.name}</span>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-white text-sm">{item.name}</span>
+                    <span
+                      className={`text-[9px] font-mono px-2 py-0.5 rounded-full border ${
+                        pricings[item.id]?.is_open !== false
+                          ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                          : "bg-red-500/15 text-red-400 border-red-500/30"
+                      }`}
+                    >
+                      {pricings[item.id]?.is_open !== false ? "● OPEN" : "🔒 CLOSED"}
+                    </span>
+                  </div>
                   <span
-                    className="px-2.5 py-1 rounded-full text-xs font-bold"
+                    className="px-2.5 py-1 rounded-full text-xs font-bold shrink-0"
                     style={{ backgroundColor: `${item.color}20`, color: item.color }}
                   >
                     {item.fee}

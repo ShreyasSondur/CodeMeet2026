@@ -24,6 +24,7 @@ import {
   Phone,
   CreditCard,
   Lock,
+  Unlock,
   AlertCircle,
   MessageSquare,
   QrCode,
@@ -203,7 +204,7 @@ function RegisterContent() {
   const [confirmedPaymentId, setConfirmedPaymentId] = useState<string>("");
   const [confirmedAmount, setConfirmedAmount] = useState<number>(100);
   const [paymentError, setPaymentError] = useState<string>("");
-  const [eventPricings, setEventPricings] = useState<Record<string, { amount_inr: number; amount_paise: number }>>({});
+  const [eventPricings, setEventPricings] = useState<Record<string, { amount_inr: number; amount_paise: number; is_open?: boolean }>>({});
 
   const WHATSAPP_GROUP_URL = "https://chat.whatsapp.com/GkmZhnNE3aIAvvdeyRqECq?s=cl&p=i&mlu=4&ilr=4";
 
@@ -279,6 +280,7 @@ function RegisterContent() {
 
   const activeEvent = EVENTS_DATA[selectedEventId] || EVENTS_DATA.hackathon;
   const activeFeeInr = eventPricings[activeEvent.id]?.amount_inr ?? 100;
+  const isEventOpen = eventPricings[activeEvent.id]?.is_open !== false;
   const Icon = activeEvent.icon;
 
   const handleSelectEvent = (id: string) => {
@@ -365,6 +367,12 @@ function RegisterContent() {
     e.preventDefault();
     soundFX.playClick();
     setPaymentError("");
+
+    if (!isEventOpen) {
+      setPaymentError(`Registrations for ${activeEvent.title} are currently closed by the organizers.`);
+      return;
+    }
+
     setIsSubmitting(true);
 
     const leaderName = activeEvent.isSolo ? soloParticipant.name : members[0]?.name;
@@ -710,6 +718,7 @@ function RegisterContent() {
           {Object.values(EVENTS_DATA).map((ev) => {
             const EvIcon = ev.icon;
             const isSelected = ev.id === selectedEventId;
+            const isEvOpen = eventPricings[ev.id]?.is_open !== false;
             return (
               <button
                 key={ev.id}
@@ -742,11 +751,19 @@ function RegisterContent() {
                   >
                     <EvIcon className="w-4 h-4" />
                   </div>
-                  {isSelected && (
-                    <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-white/10 text-white">
-                      ACTIVE
-                    </span>
-                  )}
+                  <div className="flex items-center gap-1.5">
+                    {!isEvOpen && (
+                      <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/30 flex items-center gap-1">
+                        <Lock className="w-2.5 h-2.5" />
+                        CLOSED
+                      </span>
+                    )}
+                    {isSelected && (
+                      <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-white/10 text-white">
+                        ACTIVE
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <div className="text-xs font-mono font-bold text-zinc-400 leading-none">
@@ -807,6 +824,30 @@ function RegisterContent() {
                     </div>
                     <div className="text-[10px] text-zinc-400 font-normal">
                       Cashfree Instant PG Checkout
+                    </div>
+                  </div>
+                </div>
+                <div
+                  className={`px-4 py-2.5 rounded-xl border flex items-center gap-3 ${
+                    isEventOpen
+                      ? "bg-emerald-950/30 border-emerald-500/30 text-emerald-300"
+                      : "bg-red-950/40 border-red-500/30 text-red-300"
+                  }`}
+                >
+                  {isEventOpen ? (
+                    <Unlock className="w-4 h-4 text-emerald-400 shrink-0" />
+                  ) : (
+                    <Lock className="w-4 h-4 text-red-400 shrink-0" />
+                  )}
+                  <div className="text-xs font-mono">
+                    <div className="text-zinc-500 text-[10px]">REGISTRATION STATUS</div>
+                    <div className="font-bold flex items-center gap-1.5">
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          isEventOpen ? "bg-emerald-400 animate-pulse" : "bg-red-400"
+                        }`}
+                      />
+                      {isEventOpen ? "OPEN & ACCEPTING" : "CLOSED BY ORGANIZERS"}
                     </div>
                   </div>
                 </div>
@@ -975,14 +1016,29 @@ function RegisterContent() {
                 </div>
               </div>
             ) : (
-              <form onSubmit={handleSubmit} className="space-y-8">
-                {/* Error Banner */}
-                {paymentError && (
-                  <div className="p-4 rounded-xl bg-red-500/15 border border-red-500/40 text-red-400 text-xs font-mono flex items-center gap-2.5">
-                    <AlertCircle className="w-4 h-4 shrink-0" />
-                    <span>{paymentError}</span>
+              <div className="space-y-6">
+                {!isEventOpen && (
+                  <div className="p-4 sm:p-5 rounded-2xl bg-red-500/10 border border-red-500/40 text-red-200 flex items-start gap-3 animate-in fade-in">
+                    <Lock className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <div className="font-bold font-mono text-sm uppercase tracking-wider text-red-300 flex items-center gap-2">
+                        <span>REGISTRATIONS CURRENTLY CLOSED</span>
+                      </div>
+                      <p className="text-xs font-mono text-zinc-300 leading-relaxed">
+                        Online registrations for <strong>{activeEvent.title}</strong> are temporarily paused by the CODEMEET 2026 organizing team. You can switch to another open track above or check back later.
+                      </p>
+                    </div>
                   </div>
                 )}
+
+                <form onSubmit={handleSubmit} className="space-y-8">
+                  {/* Error Banner */}
+                  {paymentError && (
+                    <div className="p-4 rounded-xl bg-red-500/15 border border-red-500/40 text-red-400 text-xs font-mono flex items-center gap-2.5">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>{paymentError}</span>
+                    </div>
+                  )}
 
                 {/* General Details: Team Name (if team event) & College Name */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 pb-6 border-b border-white/10">
@@ -1229,15 +1285,28 @@ function RegisterContent() {
 
                   <button
                     type="submit"
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || !isEventOpen}
                     onMouseEnter={() => soundFX.playHover()}
-                    className="w-full sm:w-auto px-8 py-4 rounded-xl font-[family-name:var(--font-orbitron)] font-black text-sm tracking-wider uppercase transition-all duration-300 flex items-center justify-center gap-3 cursor-pointer shadow-lg active:scale-95 disabled:opacity-50"
-                    style={{
-                      backgroundColor: activeEvent.color,
-                      color: "#050507",
-                    }}
+                    className={`w-full sm:w-auto px-8 py-4 rounded-xl font-[family-name:var(--font-orbitron)] font-black text-sm tracking-wider uppercase transition-all duration-300 flex items-center justify-center gap-3 shadow-lg active:scale-95 disabled:opacity-50 ${
+                      !isEventOpen
+                        ? "cursor-not-allowed bg-zinc-800 text-zinc-500 border border-red-500/30"
+                        : "cursor-pointer"
+                    }`}
+                    style={
+                      isEventOpen
+                        ? {
+                            backgroundColor: activeEvent.color,
+                            color: "#050507",
+                          }
+                        : undefined
+                    }
                   >
-                    {isSubmitting ? (
+                    {!isEventOpen ? (
+                      <>
+                        <Lock className="w-4 h-4 text-red-400" />
+                        <span>REGISTRATIONS CLOSED FOR THIS TRACK</span>
+                      </>
+                    ) : isSubmitting ? (
                       <>
                         <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
                         <span>OPENING SECURE CHECKOUT...</span>
@@ -1252,7 +1321,8 @@ function RegisterContent() {
                   </button>
                 </div>
               </form>
-            )}
+            </div>
+          )}
           </div>
         </div>
 

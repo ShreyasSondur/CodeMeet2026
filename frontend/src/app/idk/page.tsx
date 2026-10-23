@@ -50,6 +50,9 @@ import {
   Code2,
   RotateCcw,
   Edit3,
+  ToggleLeft,
+  ToggleRight,
+  Power,
 } from "lucide-react";
 
 interface Member {
@@ -94,6 +97,7 @@ interface EventPricing {
   amount_paise: number;
   currency: string;
   updated_at: string;
+  is_open?: boolean;
 }
 
 interface RulebookMeta {
@@ -227,6 +231,10 @@ export default function AdminPage() {
   const [inputPrices, setInputPrices] = useState<Record<string, string>>({});
   const [isSavingPrice, setIsSavingPrice] = useState<Record<string, boolean>>({});
   const [priceNotice, setPriceNotice] = useState<Record<string, string>>({});
+
+  // Dynamic Event Registration Status States
+  const [isTogglingStatus, setIsTogglingStatus] = useState<Record<string, boolean>>({});
+  const [statusNotice, setStatusNotice] = useState<Record<string, string>>({});
 
   // Problem Statements Management States
   const [adminProblems, setAdminProblems] = useState<AdminProblemStatement[]>([]);
@@ -534,6 +542,84 @@ export default function AdminPage() {
       setPriceNotice((prev) => ({ ...prev, [eventId]: "Network error connecting to pricing API." }));
     } finally {
       setIsSavingPrice((prev) => ({ ...prev, [eventId]: false }));
+    }
+  };
+
+  // Toggle Event Registration Open/Close Status
+  const handleToggleEventRegistration = async (eventId: string, currentIsOpen: boolean) => {
+    soundFX.playClick();
+    const newStatus = !currentIsOpen;
+    setIsTogglingStatus((prev) => ({ ...prev, [eventId]: true }));
+    setStatusNotice((prev) => ({ ...prev, [eventId]: "" }));
+
+    // Optimistically update
+    setEventPricings((prev) => ({
+      ...prev,
+      [eventId]: {
+        ...(prev[eventId] || {
+          event_id: eventId,
+          event_name: EVENT_CONFIGS[eventId]?.name || eventId,
+          amount_inr: 100,
+          amount_paise: 10000,
+          currency: "INR",
+          updated_at: new Date().toISOString(),
+        }),
+        is_open: newStatus,
+      },
+    }));
+
+    try {
+      const res = await fetch(`${apiUrl}/api/admin/events/registration-status`, {
+        method: "PUT",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          event_id: eventId,
+          is_open: newStatus,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.status === 401) {
+        handleUnauthorized();
+        return;
+      }
+      if (res.ok && data.success) {
+        soundFX.playSuccess();
+        setEventPricings((prev) => ({ ...prev, [eventId]: data.pricing }));
+        setStatusNotice((prev) => ({
+          ...prev,
+          [eventId]: `Success! Registrations for ${EVENT_CONFIGS[eventId]?.name || eventId} are now ${newStatus ? "OPEN" : "CLOSED"}.`,
+        }));
+        setTimeout(() => setStatusNotice((prev) => ({ ...prev, [eventId]: "" })), 4500);
+      } else {
+        // Revert on error
+        setEventPricings((prev) => ({
+          ...prev,
+          [eventId]: {
+            ...prev[eventId],
+            is_open: currentIsOpen,
+          },
+        }));
+        setStatusNotice((prev) => ({
+          ...prev,
+          [eventId]: data.detail || "Failed to update registration status",
+        }));
+      }
+    } catch {
+      // Revert on error
+      setEventPricings((prev) => ({
+        ...prev,
+        [eventId]: {
+          ...prev[eventId],
+          is_open: currentIsOpen,
+        },
+      }));
+      setStatusNotice((prev) => ({
+        ...prev,
+        [eventId]: "Network error connecting to registration status API.",
+      }));
+    } finally {
+      setIsTogglingStatus((prev) => ({ ...prev, [eventId]: false }));
     }
   };
 
@@ -1243,9 +1329,9 @@ export default function AdminPage() {
             }`}
           >
             <CreditCard className="w-4 h-4" />
-            <span>02. EVENT PRICING SETTINGS</span>
+            <span>02. EVENT PRICING & REGISTRATION CONTROLS</span>
             <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${adminTab === "pricing" ? "bg-black/20 text-black" : "bg-white/10 text-zinc-300"}`}>
-              CASHFREE SYNC
+              GATEWAY & ACCESS
             </span>
           </button>
 
@@ -1388,6 +1474,114 @@ export default function AdminPage() {
                   {stats.by_event["free-fire"] || 0}
                 </div>
                 <div className="text-[10px] font-mono text-zinc-500 mt-1">Esports squads</div>
+              </div>
+            </div>
+
+            {/* Quick Registration Status Toggle Bar in Tab 1 */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-zinc-950/90 border border-white/10 backdrop-blur-xl shadow-xl relative overflow-hidden">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/10 mb-4">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#ccff00] animate-pulse" />
+                  <span className="font-mono text-xs font-bold text-white uppercase tracking-wider">
+                    // LIVE EVENT REGISTRATION GATEWAY CONTROLS
+                  </span>
+                </div>
+                <div className="text-[11px] font-mono text-zinc-400">
+                  Toggle anytime to immediately open or close public registrations for any track.
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {Object.entries(EVENT_CONFIGS).map(([evId, evCfg]) => {
+                  const EvIcon = evCfg.icon;
+                  const pricing = eventPricings[evId];
+                  const isOpen = pricing?.is_open !== false;
+                  const isToggling = isTogglingStatus[evId] || false;
+                  const notice = statusNotice[evId];
+
+                  return (
+                    <div
+                      key={evId}
+                      className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between gap-3 ${
+                        isOpen
+                          ? "bg-black/50 border-emerald-500/30 hover:border-emerald-500/50"
+                          : "bg-red-950/20 border-red-500/30 hover:border-red-500/50"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div
+                            className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border"
+                            style={{
+                              backgroundColor: `${evCfg.color}15`,
+                              borderColor: `${evCfg.color}40`,
+                              color: evCfg.color,
+                            }}
+                          >
+                            <EvIcon className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="truncate">
+                            <div className="font-[family-name:var(--font-orbitron)] font-bold text-xs text-white truncate">
+                              {evCfg.name}
+                            </div>
+                            <div className="text-[10px] font-mono text-zinc-400">
+                              Fee: ₹{pricing?.amount_inr ?? 100}
+                            </div>
+                          </div>
+                        </div>
+
+                        <span
+                          className={`text-[9px] font-mono font-bold uppercase px-2 py-0.5 rounded-full border shrink-0 flex items-center gap-1 ${
+                            isOpen
+                              ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/40"
+                              : "bg-red-500/15 text-red-400 border-red-500/40"
+                          }`}
+                        >
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              isOpen ? "bg-emerald-400 animate-pulse" : "bg-red-400"
+                            }`}
+                          />
+                          {isOpen ? "OPEN" : "CLOSED"}
+                        </span>
+                      </div>
+
+                      {notice && (
+                        <div className="text-[10px] font-mono text-emerald-300 bg-emerald-500/10 p-1.5 rounded border border-emerald-500/30 truncate">
+                          {notice}
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => handleToggleEventRegistration(evId, isOpen)}
+                        disabled={isToggling}
+                        className={`w-full py-2 px-3 rounded-lg font-mono text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50 border ${
+                          isOpen
+                            ? "bg-red-500/15 hover:bg-red-500/25 text-red-300 border-red-500/40 hover:border-red-500/60"
+                            : "bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/40 hover:border-emerald-500/60"
+                        }`}
+                      >
+                        {isToggling ? (
+                          <>
+                            <RefreshCw className="w-3 h-3 animate-spin" />
+                            <span>UPDATING...</span>
+                          </>
+                        ) : isOpen ? (
+                          <>
+                            <Lock className="w-3 h-3 text-red-400" />
+                            <span>CLOSE REGISTRATIONS</span>
+                          </>
+                        ) : (
+                          <>
+                            <Unlock className="w-3 h-3 text-emerald-400" />
+                            <span>OPEN REGISTRATIONS</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -1613,13 +1807,13 @@ export default function AdminPage() {
                 <div className="space-y-1 max-w-2xl">
                   <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#ccff00]/10 border border-[#ccff00]/30 text-[#ccff00] text-xs font-mono font-bold">
                     <SlidersHorizontal className="w-3.5 h-3.5" />
-                    <span>DYNAMIC ENTRY FEE CONFIGURATOR</span>
+                    <span>EVENT PRICING & REGISTRATION ACCESS CONTROLS</span>
                   </div>
                   <h2 className="font-[family-name:var(--font-orbitron)] font-black text-2xl text-white">
-                    EVENT ENTRY FEES & CASHFREE GATEWAY SYNC
+                    EVENT ENTRY FEES & REGISTRATION GATEWAY ACCESS
                   </h2>
                   <p className="text-xs text-zinc-400 font-mono leading-relaxed">
-                    Update the registration entry fee for any track. Changes are stored in the server database and instantly reflected in live Cashfree checkout orders and on the <strong className="text-white">/register</strong> page.
+                    Update the registration entry fee and open or close registrations for any track. Changes are stored in the server database and instantly reflected in live Cashfree checkout orders and on the <strong className="text-white">/register</strong> page.
                   </p>
                 </div>
 
@@ -1641,10 +1835,13 @@ export default function AdminPage() {
               {Object.entries(EVENT_CONFIGS).map(([eventId, cfg]) => {
                 const EvIcon = cfg.icon;
                 const currentPricing = eventPricings[eventId];
+                const isOpen = currentPricing?.is_open !== false;
+                const isToggling = isTogglingStatus[eventId] || false;
                 const currentAmountInr = currentPricing?.amount_inr ?? 100;
                 const inputValue = inputPrices[eventId] !== undefined ? inputPrices[eventId] : String(currentAmountInr);
                 const isSaving = isSavingPrice[eventId] || false;
                 const notice = priceNotice[eventId] || "";
+                const statusNotif = statusNotice[eventId] || "";
 
                 return (
                   <div
@@ -1693,6 +1890,100 @@ export default function AdminPage() {
                           <div className="font-[family-name:var(--font-orbitron)] font-black text-xl text-[#ccff00]">
                             ₹{currentAmountInr}
                           </div>
+                        </div>
+                      </div>
+
+                      {/* Registration Access Toggle Box */}
+                      <div
+                        className={`p-4 rounded-2xl border transition-all space-y-3 ${
+                          isOpen
+                            ? "bg-emerald-950/20 border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.08)]"
+                            : "bg-red-950/25 border-red-500/30 shadow-[0_0_20px_rgba(239,68,68,0.08)]"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`w-2.5 h-2.5 rounded-full ${
+                                  isOpen
+                                    ? "bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]"
+                                    : "bg-red-400 shadow-[0_0_8px_#f87171]"
+                                }`}
+                              />
+                              <span className="font-[family-name:var(--font-orbitron)] font-bold text-xs uppercase tracking-wider text-white">
+                                REGISTRATION GATEWAY ACCESS
+                              </span>
+                            </div>
+                            <div className="text-[11px] font-mono text-zinc-400 mt-0.5">
+                              {isOpen
+                                ? "Public gateway active: Accepting registrations"
+                                : "Public gateway locked: Checkout disabled"}
+                            </div>
+                          </div>
+
+                          <span
+                            className={`px-3 py-1 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider border flex items-center gap-1.5 shrink-0 ${
+                              isOpen
+                                ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                                : "bg-red-500/20 text-red-300 border-red-500/40"
+                            }`}
+                          >
+                            {isOpen ? (
+                              <>
+                                <Unlock className="w-3 h-3 text-emerald-400" />
+                                <span>OPEN</span>
+                              </>
+                            ) : (
+                              <>
+                                <Lock className="w-3 h-3 text-red-400" />
+                                <span>CLOSED</span>
+                              </>
+                            )}
+                          </span>
+                        </div>
+
+                        {statusNotif && (
+                          <div className="p-2.5 rounded-xl font-mono text-xs bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 flex items-center gap-2">
+                            <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+                            <span>{statusNotif}</span>
+                          </div>
+                        )}
+
+                        <div className="pt-2 border-t border-white/10 flex items-center justify-between gap-3">
+                          <span className="text-[10px] font-mono text-zinc-400">
+                            {isOpen
+                              ? "Click to close/halt new signups"
+                              : "Click to resume participant registrations"}
+                          </span>
+
+                          <button
+                            type="button"
+                            onClick={() => handleToggleEventRegistration(eventId, isOpen)}
+                            disabled={isToggling}
+                            className={`px-4 py-2 rounded-xl font-[family-name:var(--font-orbitron)] font-bold text-xs tracking-wider uppercase transition-all flex items-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50 border ${
+                              isOpen
+                                ? "bg-red-500/20 hover:bg-red-500/30 text-red-200 border-red-500/40 shadow-[0_0_15px_rgba(239,68,68,0.2)]"
+                                : "bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.2)]"
+                            }`}
+                          >
+                            {isToggling ? (
+                              <>
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                <span>UPDATING...</span>
+                              </>
+                            ) : isOpen ? (
+                              <>
+                                <Lock className="w-3.5 h-3.5 text-red-400" />
+                                <span>CLOSE REGISTRATIONS</span>
+                              </>
+                            ) : (
+                              <>
+                                <Unlock className="w-3.5 h-3.5 text-emerald-400" />
+                                <span>OPEN REGISTRATIONS</span>
+                              </>
+                            )}
+                          </button>
                         </div>
                       </div>
 

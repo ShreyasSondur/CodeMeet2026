@@ -10,7 +10,8 @@ os.makedirs(DB_DIR, exist_ok=True)
 DB_PATH = os.path.join(DB_DIR, "codemeet.db")
 
 def get_db_connection():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -44,6 +45,7 @@ def init_db():
             amount_inr REAL NOT NULL,
             amount_paise INTEGER NOT NULL,
             currency TEXT DEFAULT 'INR',
+            is_open INTEGER DEFAULT 1,
             updated_at TEXT NOT NULL
         )
     """)
@@ -102,16 +104,16 @@ def init_db():
     count = cursor.fetchone()["cnt"]
     if count == 0:
         default_pricings = [
-            ("hackathon", "24H National Hackathon", 100.0, 10000),
-            ("speed-typing", "Speed Typing Showdown", 100.0, 10000),
-            ("treasure-hunt", "Treasure Hunt Cyber Quest", 200.0, 20000),
-            ("free-fire", "Free Fire Esports Arena", 200.0, 20000),
+            ("hackathon", "24H National Hackathon", 100.0, 10000, 1),
+            ("speed-typing", "Speed Typing Showdown", 100.0, 10000, 1),
+            ("treasure-hunt", "Treasure Hunt Cyber Quest", 200.0, 20000, 1),
+            ("free-fire", "Free Fire Esports Arena", 200.0, 20000, 1),
         ]
         now = datetime.utcnow().isoformat() + "Z"
-        for eid, name, inr, paise in default_pricings:
+        for eid, name, inr, paise, is_open_val in default_pricings:
             cursor.execute(
-                "INSERT INTO event_pricing (event_id, event_name, amount_inr, amount_paise, currency, updated_at) VALUES (?, ?, ?, ?, 'INR', ?)",
-                (eid, name, inr, paise, now)
+                "INSERT INTO event_pricing (event_id, event_name, amount_inr, amount_paise, currency, is_open, updated_at) VALUES (?, ?, ?, ?, 'INR', ?, ?)",
+                (eid, name, inr, paise, is_open_val, now)
             )
 
     # Seed default problem statements if table is empty
@@ -185,6 +187,12 @@ def init_db():
         cursor.execute("ALTER TABLE registrations ADD COLUMN amount_paid TEXT DEFAULT '1'")
     if "order_id" not in columns:
         cursor.execute("ALTER TABLE registrations ADD COLUMN order_id TEXT DEFAULT ''")
+
+    cursor.execute("PRAGMA table_info(event_pricing)")
+    pricing_columns = [row["name"] for row in cursor.fetchall()]
+    if "is_open" not in pricing_columns:
+        cursor.execute("ALTER TABLE event_pricing ADD COLUMN is_open INTEGER DEFAULT 1")
+    cursor.execute("UPDATE event_pricing SET is_open = 1 WHERE is_open IS NULL")
     conn.commit()
     conn.close()
 
@@ -197,12 +205,17 @@ def get_event_pricings() -> Dict[str, Dict[str, Any]]:
 
     result = {}
     for row in rows:
+        keys = row.keys()
+        is_open_val = True
+        if "is_open" in keys and row["is_open"] is not None:
+            is_open_val = bool(row["is_open"])
         result[row["event_id"]] = {
             "event_id": row["event_id"],
             "event_name": row["event_name"],
             "amount_inr": float(row["amount_inr"]),
             "amount_paise": int(row["amount_paise"]),
             "currency": row["currency"],
+            "is_open": is_open_val,
             "updated_at": row["updated_at"]
         }
     return result
@@ -215,12 +228,17 @@ def get_event_pricing(event_id: str) -> Optional[Dict[str, Any]]:
     conn.close()
 
     if row:
+        keys = row.keys()
+        is_open_val = True
+        if "is_open" in keys and row["is_open"] is not None:
+            is_open_val = bool(row["is_open"])
         return {
             "event_id": row["event_id"],
             "event_name": row["event_name"],
             "amount_inr": float(row["amount_inr"]),
             "amount_paise": int(row["amount_paise"]),
             "currency": row["currency"],
+            "is_open": is_open_val,
             "updated_at": row["updated_at"]
         }
     return None
@@ -244,15 +262,23 @@ def update_event_pricing(event_id: str, amount_inr: float) -> Dict[str, Any]:
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO event_pricing (event_id, event_name, amount_inr, amount_paise, currency, updated_at)
-        VALUES (?, ?, ?, ?, 'INR', ?)
+        INSERT INTO event_pricing (event_id, event_name, amount_inr, amount_paise, currency, is_open, updated_at)
+        VALUES (?, ?, ?, ?, 'INR', 1, ?)
         ON CONFLICT(event_id) DO UPDATE SET
             amount_inr = excluded.amount_inr,
             amount_paise = excluded.amount_paise,
             updated_at = excluded.updated_at
     """, (event_id, name, amount_inr, amount_paise, now))
     conn.commit()
+
+    cursor.execute("SELECT * FROM event_pricing WHERE event_id = ?", (event_id,))
+    row = cursor.fetchone()
     conn.close()
+
+    keys = row.keys() if row else []
+    is_open_val = True
+    if "is_open" in keys and row["is_open"] is not None:
+        is_open_val = bool(row["is_open"])
 
     return {
         "event_id": event_id,
@@ -260,7 +286,44 @@ def update_event_pricing(event_id: str, amount_inr: float) -> Dict[str, Any]:
         "amount_inr": amount_inr,
         "amount_paise": amount_paise,
         "currency": "INR",
+        "is_open": is_open_val,
         "updated_at": now
+    }
+
+def update_event_status(event_id: str, is_open: bool) -> Dict[str, Any]:
+    now = datetime.utcnow().isoformat() + "Z"
+    event_names = {
+        "hackathon": "24H National Hackathon",
+        "speed-typing": "Speed Typing Showdown",
+        "treasure-hunt": "Treasure Hunt Cyber Quest",
+        "free-fire": "Free Fire Esports Arena",
+    }
+    name = event_names.get(event_id, event_id.replace("-", " ").title())
+    is_open_int = 1 if is_open else 0
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO event_pricing (event_id, event_name, amount_inr, amount_paise, currency, is_open, updated_at)
+        VALUES (?, ?, 100.0, 10000, 'INR', ?, ?)
+        ON CONFLICT(event_id) DO UPDATE SET
+            is_open = excluded.is_open,
+            updated_at = excluded.updated_at
+    """, (event_id, name, is_open_int, now))
+    conn.commit()
+
+    cursor.execute("SELECT * FROM event_pricing WHERE event_id = ?", (event_id,))
+    row = cursor.fetchone()
+    conn.close()
+
+    return {
+        "event_id": row["event_id"],
+        "event_name": row["event_name"],
+        "amount_inr": float(row["amount_inr"]),
+        "amount_paise": int(row["amount_paise"]),
+        "currency": row["currency"],
+        "is_open": bool(row["is_open"]),
+        "updated_at": row["updated_at"]
     }
 
 def save_registration(

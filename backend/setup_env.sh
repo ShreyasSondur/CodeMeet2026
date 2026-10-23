@@ -67,12 +67,13 @@ echo "CASHFREE_ENV=PROD" >> "$ENV_FILE"
 echo "CASHFREE_API_VERSION=2023-08-01" >> "$ENV_FILE"
 
 echo "✅ Production .env (Cashfree, SMTP & 2FA Admin) configured successfully!"
-echo "Restarting backend service (codemeet-backend)..."
 
-sudo systemctl daemon-reload 2>/dev/null || true
-sudo systemctl restart codemeet-backend 2>/dev/null || true
-
-echo "=================================================="
-echo "  STATUS CHECK:                                   "
-echo "=================================================="
-sudo systemctl status codemeet-backend --no-pager
+if [ "$1" != "--no-restart" ] && [ "$2" != "--no-restart" ] && [ "$3" != "--no-restart" ]; then
+    echo "Restarting backend service (codemeet-backend)..."
+    sudo systemctl daemon-reload 2>/dev/null || true
+    sudo systemctl restart codemeet-backend 2>/dev/null || true
+    echo "=================================================="
+    echo "  STATUS CHECK:                                   "
+    echo "=================================================="
+    sudo systemctl status codemeet-backend --no-pager
+fi

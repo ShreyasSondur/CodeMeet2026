@@ -28,6 +28,7 @@ from database import (
     get_event_pricings,
     get_event_pricing,
     update_event_pricing,
+    update_event_status,
     save_admin_session,
     is_valid_admin_session,
     delete_admin_session,
@@ -178,6 +179,10 @@ class UpdateEventPricingRequest(BaseModel):
     event_id: str
     amount_inr: float
 
+class ToggleEventRegistrationRequest(BaseModel):
+    event_id: str
+    is_open: bool
+
 class UpdateProblemStatementRequest(BaseModel):
     title: str
     category: str
@@ -280,6 +285,20 @@ def admin_update_pricing(
     return {
         "success": True,
         "message": f"Entry fee for {updated['event_name']} updated to ₹{updated['amount_inr']:.2f}",
+        "pricing": updated
+    }
+
+@app.put("/api/admin/events/registration-status")
+def admin_toggle_event_registration(
+    data: ToggleEventRegistrationRequest,
+    authorized: bool = Depends(verify_admin_auth)
+):
+    """Admin endpoint to open or close event registrations dynamically (Protected by 2FA)"""
+    updated = update_event_status(data.event_id, data.is_open)
+    status_str = "OPENED" if updated["is_open"] else "CLOSED"
+    return {
+        "success": True,
+        "message": f"Registrations for {updated['event_name']} are now {status_str}.",
         "pricing": updated
     }
 
@@ -474,6 +493,13 @@ def get_payment_config():
 def create_order(data: CreateOrderRequest):
     event_id = data.event_id or "hackathon"
     pricing = get_event_pricing(event_id)
+
+    # Check if registrations for this track are currently closed
+    if pricing and pricing.get("is_open") is False:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Registrations for {pricing.get('event_name', event_id)} are currently closed."
+        )
 
     # Resolve amount in INR dynamically from admin-configured pricing if not explicitly specified
     if data.amount_inr and data.amount_inr >= 1.0:
