@@ -20,8 +20,14 @@ fi
 
 # 2. Setup / update .env with production credentials (without early restart)
 echo "[2/6] Verifying production environment (.env)..."
+if [ -f ".env" ]; then
+    sed -i 's/CASHFREE_APP_ID=--no-restart/CASHFREE_APP_ID=10818255fecb872f3ff06e645a65281801/' .env 2>/dev/null || true
+fi
 if [ -f "setup_env.sh" ]; then
     bash setup_env.sh --no-restart
+fi
+if [ -f ".env" ]; then
+    sed -i 's/CASHFREE_APP_ID=--no-restart/CASHFREE_APP_ID=10818255fecb872f3ff06e645a65281801/' .env 2>/dev/null || true
 fi
 
 # 3. Virtual environment & Python dependencies

@@ -163,6 +163,13 @@ def run_migration() -> bool:
                 print(f"  -> Adding missing column to registrations: {col}...")
                 cursor.execute(f"ALTER TABLE registrations ADD COLUMN {col} {col_type} DEFAULT {col_def}")
 
+        # Unique partial index on order_id to prevent duplicate registrations across uvicorn workers
+        cursor.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_registrations_order_id 
+            ON registrations(order_id) 
+            WHERE order_id != '' AND order_id IS NOT NULL
+        """)
+
         # 2. Event Pricing table (with is_open column)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS event_pricing (

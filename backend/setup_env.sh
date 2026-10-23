@@ -16,8 +16,39 @@ DEFAULT_SECRET_KEY=$(echo "Y2Zza19tYV9wcm9kX2NlYTNiYzlmYjc3OTlkYWMxMmZjODVlNzcxO
 DEFAULT_SMTP_EMAIL=$(echo "d2ViZmxvd2NvbW11bml0eUBzcmluaXZhc3VuaXZlcnNpdHkuZWR1Lmlu" | base64 -d)
 DEFAULT_SMTP_PASS=$(echo "Y2JxYXFpZ3JzZmlicHZreg==" | base64 -d)
 
-APP_ID="${1:-$DEFAULT_APP_ID}"
-SECRET_KEY="${2:-$DEFAULT_SECRET_KEY}"
+RESTART_SERVICE=true
+APP_ID="$DEFAULT_APP_ID"
+SECRET_KEY="$DEFAULT_SECRET_KEY"
+
+# Separate flags from positional arguments safely
+POSITIONAL_ARGS=()
+for arg in "$@"; do
+    case "$arg" in
+        --no-restart)
+            RESTART_SERVICE=false
+            ;;
+        --restart)
+            RESTART_SERVICE=true
+            ;;
+        *)
+            POSITIONAL_ARGS+=("$arg")
+            ;;
+    esac
+done
+
+if [ ${#POSITIONAL_ARGS[@]} -ge 1 ] && [ -n "${POSITIONAL_ARGS[0]}" ]; then
+    CANDIDATE_APP="${POSITIONAL_ARGS[0]}"
+    if [[ "$CANDIDATE_APP" != -* ]] && [ ${#CANDIDATE_APP} -ge 8 ]; then
+        APP_ID="$CANDIDATE_APP"
+    fi
+fi
+
+if [ ${#POSITIONAL_ARGS[@]} -ge 2 ] && [ -n "${POSITIONAL_ARGS[1]}" ]; then
+    CANDIDATE_SEC="${POSITIONAL_ARGS[1]}"
+    if [[ "$CANDIDATE_SEC" != -* ]] && [ ${#CANDIDATE_SEC} -ge 8 ]; then
+        SECRET_KEY="$CANDIDATE_SEC"
+    fi
+fi
 
 echo "=================================================="
 echo "  CODEMEET 2026 - PRODUCTION ENV AUTO-SETUP      "
@@ -32,7 +63,7 @@ if [ ! -f "$ENV_FILE" ]; then
     fi
 fi
 
-# Clean previous keys
+# Clean previous keys (including any previously corrupted --no-restart values)
 sed -i '/CASHFREE_APP_ID/d' "$ENV_FILE" 2>/dev/null || true
 sed -i '/CASHFREE_SECRET_KEY/d' "$ENV_FILE" 2>/dev/null || true
 sed -i '/CASHFREE_ENV/d' "$ENV_FILE" 2>/dev/null || true
@@ -68,7 +99,7 @@ echo "CASHFREE_API_VERSION=2023-08-01" >> "$ENV_FILE"
 
 echo "✅ Production .env (Cashfree, SMTP & 2FA Admin) configured successfully!"
 
-if [ "$1" != "--no-restart" ] && [ "$2" != "--no-restart" ] && [ "$3" != "--no-restart" ]; then
+if [ "$RESTART_SERVICE" = true ]; then
     echo "Restarting backend service (codemeet-backend)..."
     sudo systemctl daemon-reload 2>/dev/null || true
     sudo systemctl restart codemeet-backend 2>/dev/null || true

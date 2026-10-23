@@ -279,7 +279,7 @@ function RegisterContent() {
   }, [orderIdParam, apiUrl]);
 
   const activeEvent = EVENTS_DATA[selectedEventId] || EVENTS_DATA.hackathon;
-  const activeFeeInr = eventPricings[activeEvent.id]?.amount_inr ?? 100;
+  const activeFeeInr = eventPricings[activeEvent.id]?.amount_inr ?? (activeEvent.id === "treasure-hunt" || activeEvent.id === "free-fire" ? 200 : 100);
   const isEventOpen = eventPricings[activeEvent.id]?.is_open !== false;
   const Icon = activeEvent.icon;
 
@@ -297,8 +297,13 @@ function RegisterContent() {
   ) => {
     let cleanVal = value;
     if (field === "phone") {
-      // Only allow digits and limit to 10 characters
-      cleanVal = value.replace(/\D/g, "").slice(0, 10);
+      let digits = value.replace(/\D/g, "");
+      if (digits.startsWith("91") && digits.length === 12) {
+        digits = digits.slice(2);
+      } else if (digits.startsWith("0") && digits.length === 11) {
+        digits = digits.slice(1);
+      }
+      cleanVal = digits.slice(0, 10);
     }
     setMembers((prev) => {
       const updated = [...prev];
@@ -310,8 +315,13 @@ function RegisterContent() {
   const handleSoloChange = (field: keyof MemberData, value: string) => {
     let cleanVal = value;
     if (field === "phone") {
-      // Only allow digits and limit to 10 characters
-      cleanVal = value.replace(/\D/g, "").slice(0, 10);
+      let digits = value.replace(/\D/g, "");
+      if (digits.startsWith("91") && digits.length === 12) {
+        digits = digits.slice(2);
+      } else if (digits.startsWith("0") && digits.length === 11) {
+        digits = digits.slice(1);
+      }
+      cleanVal = digits.slice(0, 10);
     }
     setSoloParticipant((prev) => ({ ...prev, [field]: cleanVal }));
   };

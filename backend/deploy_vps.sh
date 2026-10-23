@@ -19,6 +19,9 @@ if [ ! -f ".env" ]; then
     fi
     echo "⚠️ NOTE: Please verify .env credentials."
 fi
+if [ -f ".env" ]; then
+    sed -i 's/CASHFREE_APP_ID=--no-restart/CASHFREE_APP_ID=10818255fecb872f3ff06e645a65281801/' .env 2>/dev/null || true
+fi
 
 # 2. Install system packages
 echo "[2/7] Installing python3-venv, pip, nginx, certbot..."

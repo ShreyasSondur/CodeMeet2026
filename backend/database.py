@@ -193,6 +193,14 @@ def init_db():
     if "is_open" not in pricing_columns:
         cursor.execute("ALTER TABLE event_pricing ADD COLUMN is_open INTEGER DEFAULT 1")
     cursor.execute("UPDATE event_pricing SET is_open = 1 WHERE is_open IS NULL")
+
+    # Safe index on registrations(order_id) to guarantee idempotence across uvicorn workers
+    cursor.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_registrations_order_id 
+        ON registrations(order_id) 
+        WHERE order_id != '' AND order_id IS NOT NULL
+    """)
+
     conn.commit()
     conn.close()
 
@@ -348,6 +356,24 @@ def save_registration(
     
     conn = get_db_connection()
     cursor = conn.cursor()
+    cursor.execute("BEGIN IMMEDIATE")
+
+    # Check if order_id or payment_id has already been registered (race prevention across workers)
+    clean_order_id = (order_id or "").strip()
+    clean_payment_id = (payment_id or "").strip()
+    if clean_order_id or clean_payment_id:
+        cursor.execute("""
+            SELECT * FROM registrations 
+            WHERE (order_id != '' AND order_id = ?) 
+               OR (payment_id != '' AND payment_id = ?)
+            LIMIT 1
+        """, (clean_order_id, clean_payment_id))
+        existing_row = cursor.fetchone()
+        if existing_row:
+            conn.rollback()
+            conn.close()
+            return _format_registration_row(existing_row)
+
     cursor.execute("""
         INSERT OR REPLACE INTO registrations (
             id, event_id, event_name, team_name, college_name,
@@ -461,6 +487,10 @@ def get_pending_order(order_id: str) -> Optional[Dict[str, Any]]:
 
 def _format_registration_row(row: sqlite3.Row) -> Dict[str, Any]:
     row_keys = row.keys()
+    try:
+        members_val = json.loads(row["members_json"]) if row["members_json"] else []
+    except Exception:
+        members_val = []
     return {
         "id": row["id"],
         "event_id": row["event_id"],
@@ -470,9 +500,9 @@ def _format_registration_row(row: sqlite3.Row) -> Dict[str, Any]:
         "leader_name": row["leader_name"],
         "leader_email": row["leader_email"],
         "leader_phone": row["leader_phone"],
-        "members": json.loads(row["members_json"]),
+        "members": members_val,
         "is_solo": bool(row["is_solo"]),
-        "total_members": row["total_members"] if "total_members" in row_keys else len(json.loads(row["members_json"])),
+        "total_members": row["total_members"] if "total_members" in row_keys else len(members_val),
         "payment_status": row["payment_status"],
         "payment_id": row["payment_id"] if "payment_id" in row_keys else "",
         "order_id": row["order_id"] if "order_id" in row_keys else "",
@@ -525,8 +555,9 @@ def get_registration_by_order_or_payment(
     cursor = conn.cursor()
 
     if ids_to_check:
-        placeholders = ",".join(["?"] * len(ids_to_check))
-        params = list(ids_to_check) * 3
+        id_list = list(ids_to_check)
+        placeholders = ",".join(["?"] * len(id_list))
+        params = id_list + id_list + id_list
         query = f"""
             SELECT * FROM registrations 
             WHERE payment_id IN ({placeholders})

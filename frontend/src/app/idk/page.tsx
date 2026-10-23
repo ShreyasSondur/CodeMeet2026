@@ -235,6 +235,8 @@ export default function AdminPage() {
   // Dynamic Event Registration Status States
   const [isTogglingStatus, setIsTogglingStatus] = useState<Record<string, boolean>>({});
   const [statusNotice, setStatusNotice] = useState<Record<string, string>>({});
+  const [isSyncingGateway, setIsSyncingGateway] = useState(false);
+  const [gatewaySyncReport, setGatewaySyncReport] = useState<any>(null);
 
   // Problem Statements Management States
   const [adminProblems, setAdminProblems] = useState<AdminProblemStatement[]>([]);
@@ -620,6 +622,35 @@ export default function AdminPage() {
       }));
     } finally {
       setIsTogglingStatus((prev) => ({ ...prev, [eventId]: false }));
+    }
+  };
+
+  // Cashfree Gateway Telemetry & Diagnostics Sync
+  const handleSyncGateway = async () => {
+    soundFX.playClick();
+    setIsSyncingGateway(true);
+    setGatewaySyncReport(null);
+    try {
+      const res = await fetch(`${apiUrl}/api/admin/gateway/sync`, {
+        method: "POST",
+        headers: { "x-admin-token": getAdminToken() },
+      });
+      const data = await res.json();
+      if (res.status === 401) {
+        handleUnauthorized();
+        return;
+      }
+      setGatewaySyncReport(data);
+      if (data.cashfree_auth_status?.includes("AUTHENTICATED")) {
+        soundFX.playSuccess();
+      }
+    } catch {
+      setGatewaySyncReport({
+        cashfree_auth_status: "NETWORK ERROR",
+        cashfree_detail: "Failed to connect to backend gateway diagnostics endpoint.",
+      });
+    } finally {
+      setIsSyncingGateway(false);
     }
   };
 
@@ -1817,17 +1848,51 @@ export default function AdminPage() {
                   </p>
                 </div>
 
-                <button
-                  onClick={() => {
-                    soundFX.playClick();
-                    fetchPricingData();
-                  }}
-                  className="px-4 py-2.5 rounded-xl bg-zinc-900 border border-white/15 hover:border-[#ccff00] text-xs font-mono text-zinc-300 hover:text-white flex items-center gap-2 transition-all shrink-0 cursor-pointer self-start md:self-auto"
-                >
-                  <RefreshCw className="w-3.5 h-3.5 text-[#ccff00]" />
-                  <span>Reload Live Prices</span>
-                </button>
+                <div className="flex items-center gap-2 flex-wrap shrink-0 self-start md:self-auto">
+                  <button
+                    onClick={handleSyncGateway}
+                    disabled={isSyncingGateway}
+                    className="px-4 py-2.5 rounded-xl bg-zinc-900 border border-white/15 hover:border-cyan-400 text-xs font-mono text-zinc-300 hover:text-white flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <ShieldCheck className={`w-3.5 h-3.5 text-cyan-400 ${isSyncingGateway ? "animate-spin" : ""}`} />
+                    <span>{isSyncingGateway ? "Testing Gateway..." : "Verify Cashfree Gateway"}</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      soundFX.playClick();
+                      fetchPricingData();
+                    }}
+                    className="px-4 py-2.5 rounded-xl bg-zinc-900 border border-white/15 hover:border-[#ccff00] text-xs font-mono text-zinc-300 hover:text-white flex items-center gap-2 transition-all cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 text-[#ccff00]" />
+                    <span>Reload Live Prices</span>
+                  </button>
+                </div>
               </div>
+
+              {/* Gateway Diagnostics Report Banner */}
+              {gatewaySyncReport && (
+                <div className={`mt-4 p-4 rounded-2xl border font-mono text-xs ${
+                  gatewaySyncReport.cashfree_auth_status?.includes("AUTHENTICATED")
+                    ? "bg-emerald-950/40 border-emerald-500/40 text-emerald-300"
+                    : "bg-red-950/40 border-red-500/40 text-red-300"
+                }`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4" />
+                      CASHFREE GATEWAY STATUS: {gatewaySyncReport.cashfree_auth_status}
+                    </span>
+                    <span className="text-[10px] text-zinc-400">
+                      APP ID: {gatewaySyncReport.app_id} • ENV: {gatewaySyncReport.environment}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[11px] text-zinc-300">
+                    {gatewaySyncReport.cashfree_detail}
+                    {gatewaySyncReport.env_repaired && " (Auto-repaired corrupted .env on disk)"}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Event Pricing Cards Grid */}

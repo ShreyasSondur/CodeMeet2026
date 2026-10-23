@@ -59,12 +59,32 @@ ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", os.getenv("SMTP_EMAIL", "admin@codemeet.c
 _DEFAULT_CF_APP = base64.b64decode("MTA4MTgyNTVmZWNiODcyZjNmZjA2ZTY0NWE2NTI4MTgwMQ==").decode()
 _DEFAULT_CF_SEC = base64.b64decode("Y2Zza19tYV9wcm9kX2NlYTNiYzlmYjc3OTlkYWMxMmZjODVlNzcxODNhZmIwXzk1ZDA3OGI2").decode()
 
-CASHFREE_APP_ID = os.getenv("CASHFREE_APP_ID", _DEFAULT_CF_APP).strip() or _DEFAULT_CF_APP
-CASHFREE_SECRET_KEY = os.getenv("CASHFREE_SECRET_KEY", _DEFAULT_CF_SEC).strip() or _DEFAULT_CF_SEC
+def _clean_env_val(val: Optional[str], default: str) -> str:
+    cleaned = (val or "").strip()
+    if not cleaned or cleaned.startswith("-") or len(cleaned) < 8:
+        return default
+    return cleaned
+
+CASHFREE_APP_ID = _clean_env_val(os.getenv("CASHFREE_APP_ID"), _DEFAULT_CF_APP)
+CASHFREE_SECRET_KEY = _clean_env_val(os.getenv("CASHFREE_SECRET_KEY"), _DEFAULT_CF_SEC)
 CASHFREE_ENV = os.getenv("CASHFREE_ENV", "PROD").strip().upper()
 CASHFREE_API_VERSION = os.getenv("CASHFREE_API_VERSION", "2023-08-01").strip()
 
 CASHFREE_BASE_URL = "https://api.cashfree.com/pg" if CASHFREE_ENV in ("PROD", "PRODUCTION") else "https://sandbox.cashfree.com/pg"
+
+# Auto-repair on-disk .env if CASHFREE_APP_ID was corrupted with --no-restart
+try:
+    _env_disk_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if os.path.exists(_env_disk_path):
+        with open(_env_disk_path, "r", encoding="utf-8") as _ef:
+            _env_raw = _ef.read()
+        if "CASHFREE_APP_ID=--no-restart" in _env_raw:
+            _env_raw = _env_raw.replace("CASHFREE_APP_ID=--no-restart", f"CASHFREE_APP_ID={_DEFAULT_CF_APP}")
+            with open(_env_disk_path, "w", encoding="utf-8") as _ef:
+                _ef.write(_env_raw)
+            print("[AUTO-REPAIR] Fixed corrupted CASHFREE_APP_ID in backend .env on disk.")
+except Exception as _env_rep_err:
+    print(f"[Notice] .env auto-repair check: {_env_rep_err}")
 
 def get_cf_headers():
     return {
@@ -147,6 +167,10 @@ class MemberSchema(BaseModel):
     @classmethod
     def validate_phone(cls, v: str) -> str:
         clean = re.sub(r"\D", "", v or "")
+        if clean.startswith("91") and len(clean) == 12:
+            clean = clean[2:]
+        elif clean.startswith("0") and len(clean) == 11:
+            clean = clean[1:]
         if len(clean) != 10:
             raise ValueError("Phone number must be exactly 10 digits (numbers only)")
         return clean
@@ -300,6 +324,59 @@ def admin_toggle_event_registration(
         "success": True,
         "message": f"Registrations for {updated['event_name']} are now {status_str}.",
         "pricing": updated
+    }
+
+@app.get("/api/admin/gateway/sync")
+@app.post("/api/admin/gateway/sync")
+def admin_sync_gateway(authorized: bool = Depends(verify_admin_auth)):
+    """Admin endpoint to verify Cashfree gateway health, test credentials, and auto-repair .env"""
+    headers = get_cf_headers()
+    cf_status = "UNKNOWN"
+    cf_msg = ""
+    try:
+        # A test call to Cashfree PG orders API
+        test_res = requests.get(
+            f"{CASHFREE_BASE_URL}/orders/test_auth_check_probe",
+            headers=headers,
+            timeout=8
+        )
+        if test_res.status_code == 404:
+            # 404 means Cashfree authenticated successfully (order ID not found, but token/keys valid!)
+            cf_status = "AUTHENTICATED & ACTIVE"
+            cf_msg = "Cashfree production credentials verified successfully!"
+        elif test_res.status_code == 401:
+            cf_status = "AUTHENTICATION FAILED"
+            cf_msg = test_res.text
+        else:
+            cf_status = f"HTTP {test_res.status_code}"
+            cf_msg = test_res.text
+    except Exception as e:
+        cf_status = "ERROR"
+        cf_msg = str(e)
+
+    env_repaired = False
+    try:
+        env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+        if os.path.exists(env_path):
+            with open(env_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            if "CASHFREE_APP_ID=--no-restart" in content:
+                content = content.replace("CASHFREE_APP_ID=--no-restart", f"CASHFREE_APP_ID={_DEFAULT_CF_APP}")
+                with open(env_path, "w", encoding="utf-8") as f:
+                    f.write(content)
+                env_repaired = True
+    except Exception as e:
+        print(f"[Warning] Failed to verify .env: {e}")
+
+    return {
+        "success": True,
+        "gateway": "cashfree",
+        "app_id": CASHFREE_APP_ID,
+        "environment": CASHFREE_ENV,
+        "api_version": CASHFREE_API_VERSION,
+        "cashfree_auth_status": cf_status,
+        "cashfree_detail": cf_msg,
+        "env_repaired": env_repaired
     }
 
 # ==========================================
@@ -527,10 +604,18 @@ def create_order(data: CreateOrderRequest):
     cust_phone = data.leader_phone or (data.members[0].phone if data.members and len(data.members) > 0 else "9999999999")
     
     clean_phone = re.sub(r"\D", "", cust_phone or "")
+    if clean_phone.startswith("91") and len(clean_phone) == 12:
+        clean_phone = clean_phone[2:]
+    elif clean_phone.startswith("0") and len(clean_phone) == 11:
+        clean_phone = clean_phone[1:]
     if len(clean_phone) != 10:
         clean_phone = "9876543210"
 
     cust_id = f"cust_{clean_phone}_{uuid.uuid4().hex[:6]}"
+
+    # Cashfree requires customer_name to use standard characters
+    clean_cust_name = re.sub(r"[^a-zA-Z0-9\s\.\-']", "", cust_name or "").strip() or "Participant"
+    clean_college_note = re.sub(r"[^a-zA-Z0-9\s\.\-_]", "", data.college_name or "Candidate").strip() or "Candidate"
 
     # Cashfree strictly requires return_url to start with https://
     return_base = os.getenv("CASHFREE_RETURN_URL", "").strip()
@@ -540,20 +625,25 @@ def create_order(data: CreateOrderRequest):
         else:
             return_base = "https://suiet.website"
 
+    order_meta = {
+        "return_url": f"{return_base.rstrip('/')}/register?order_id={order_id}"
+    }
+    notify_url = os.getenv("CASHFREE_NOTIFY_URL", "https://api.hackathon.suiet.website/api/cashfree-webhook").strip()
+    if notify_url and notify_url.startswith("https://"):
+        order_meta["notify_url"] = notify_url
+
     order_payload = {
         "order_id": order_id,
         "order_amount": order_amount_inr,
         "order_currency": data.currency or "INR",
         "customer_details": {
             "customer_id": cust_id,
-            "customer_name": cust_name[:50] if cust_name else "Participant",
+            "customer_name": clean_cust_name[:50],
             "customer_email": cust_email if "@" in cust_email else "participant@codemeet.com",
             "customer_phone": clean_phone
         },
-        "order_meta": {
-            "return_url": f"{return_base.rstrip('/')}/register?order_id={order_id}"
-        },
-        "order_note": f"CODEMEET 2026 - {event_id} ({data.college_name or 'Candidate'})"
+        "order_meta": order_meta,
+        "order_note": f"CODEMEET 2026 - {event_id} ({clean_college_note[:40]})"
     }
 
     try:
@@ -728,15 +818,24 @@ def _process_successful_payment(
             "phone": cust_phone
         }
 
-        # Resolve amount paid
+        # Resolve amount paid safely handling int, float, and decimal strings
         order_amount = order_info.get("order_amount") if order_info else None
-        if order_amount:
-            effective_amount = str(int(order_amount))
-        elif pending_info.get("amount_inr"):
-            effective_amount = str(int(pending_info["amount_inr"]))
+        if order_amount is not None:
+            try:
+                effective_amount = str(int(round(float(order_amount))))
+            except Exception:
+                effective_amount = "100"
+        elif pending_info.get("amount_inr") is not None:
+            try:
+                effective_amount = str(int(round(float(pending_info["amount_inr"]))))
+            except Exception:
+                effective_amount = "100"
         else:
             pricing = get_event_pricing(event_id)
-            effective_amount = str(int(pricing["amount_inr"])) if pricing else (req_data.amount_paid if req_data else "100")
+            if pricing and pricing.get("amount_inr") is not None:
+                effective_amount = str(int(round(float(pricing["amount_inr"]))))
+            else:
+                effective_amount = str(req_data.amount_paid if req_data and req_data.amount_paid else "100")
 
         saved_rec = save_registration(
             reg_id=reg_id,
